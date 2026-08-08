@@ -1,0 +1,46 @@
+[project]
+name = "oh-my-pastebin"
+version = "0.1.0"
+description = "Private authenticated direct-upload pastebin"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "httpx2>=2.9.1",
+    "opendal>=0.47.5",
+    "puremagic>=2.2.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "typer>=0.27.1",
+]
+
+[project.scripts]
+omp = "oh_my_pastebin.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.13,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/local"]
+asyncio_mode = "auto"
+
+[tool.pyright]
+include = ["src", "tests/local"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingModuleSource = false
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

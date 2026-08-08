@@ -1,0 +1,66 @@
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      OMP_STORAGE_URI: "s3://${MINIO_BUCKET:-omp}?endpoint=http%3A%2F%2Fminio.localhost%3A59001&region=us-east-1&access_key_id=${MINIO_ROOT_USER:-ompdev}&secret_access_key=${MINIO_ROOT_PASSWORD:-omp-minio-password}"
+      OMP_API_TOKEN: "${OMP_API_TOKEN:?set OMP_API_TOKEN in .env}"
+      OMP_UPLOAD_URL_TTL_SECONDS: "${OMP_UPLOAD_URL_TTL_SECONDS:-300}"
+      OMP_DOWNLOAD_URL_TTL_SECONDS: "${OMP_DOWNLOAD_URL_TTL_SECONDS:-3600}"
+    ports:
+      - "59000:59000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:59000/openapi.json', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --address ":59001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-ompdev}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-omp-minio-password}"
+    volumes:
+      - minio-data:/data
+    ports:
+      - "59001:59001"
+    networks:
+      default:
+        aliases:
+          - minio.localhost
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:59001/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-ompdev}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-omp-minio-password}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-omp}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local http://minio:59001 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+
+volumes:
+  minio-data:
