@@ -201,7 +201,7 @@ def test_api_rejects_invalid_upload_name_with_422() -> None:
 
 
 def test_non_ascii_configured_token_still_rejects_invalid_credentials_cleanly() -> None:
-    with _client("私密令牌") as client:
+    with _client("private-\u2603-token") as client:
         response = client.get(
             "/api/v1/files",
             headers={"Authorization": "Bearer wrong"},

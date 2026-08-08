@@ -2,6 +2,9 @@
 
 Business authorization is attached only to explicit control-plane requests. Storage
 requests use solely the method and signed headers returned by the upload grant.
+
+CLI configuration lives at ``$XDG_CONFIG_HOME/omp/env`` (defaulting to
+``~/.config/omp/env``). Process environment values override the file.
 """
 
 import logging
@@ -12,8 +15,10 @@ from typing import Annotated, BinaryIO, cast
 
 import httpx2
 import typer
+from dotenv import set_key
 from puremagic.main import PureError, from_file  # pyright: ignore[reportUnknownVariableType]
-from pydantic import BaseModel
+from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from oh_my_pastebin.models import (
     DownloadGrant,
@@ -26,10 +31,31 @@ logger = logging.getLogger(__name__)
 DEFAULT_API_URL = "http://127.0.0.1:59000"
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
 app = typer.Typer(no_args_is_help=True)
+AuthToken = Annotated[SecretStr, Field(min_length=1)]
 
 
 class CliError(RuntimeError):
     """A safe, concise failure intended for CLI stderr."""
+
+
+class AuthConfig(BaseModel):
+    """Values validated before an auth configuration write."""
+
+    api_url: AnyHttpUrl
+    api_token: AuthToken
+
+
+class CliSettings(BaseSettings):
+    """CLI settings loaded from process environment and the XDG env file."""
+
+    model_config = SettingsConfigDict(env_prefix="OMP_", extra="ignore")
+
+    api_url: AnyHttpUrl = AnyHttpUrl(DEFAULT_API_URL)
+    api_token: AuthToken
+
+    def __init__(self, env_file: Path) -> None:
+        """Load process environment over the supplied dotenv file."""
+        super().__init__(_env_file=env_file, _env_file_encoding="utf-8")
 
 
 @app.callback()
@@ -50,16 +76,59 @@ def _content_type(path: Path) -> str:
     return detected or DEFAULT_CONTENT_TYPE
 
 
-def _api_token() -> str:
-    """Load the business token from the process environment.
+def _config_path() -> Path:
+    """Return the per-user CLI configuration path."""
+    config_home = os.getenv("XDG_CONFIG_HOME")
+    base = Path(config_home) if config_home else Path.home() / ".config"
+    return base / "omp" / "env"
+
+
+def _load_cli_settings() -> CliSettings:
+    """Load CLI settings with process environment taking precedence over the XDG file.
 
     Raises:
-        CliError: If ``OMP_API_TOKEN`` is absent or empty.
+        CliError: If authentication configuration is missing or invalid, including an
+            invalid URL.
     """
-    token = os.getenv("OMP_API_TOKEN")
-    if token is None or token == "":
-        raise CliError("OMP_API_TOKEN 未设置或为空")
-    return token
+    try:
+        return CliSettings(_config_path())
+    except ValidationError:
+        raise CliError("Authentication configuration is missing or invalid") from None
+
+
+def _write_auth_config(url: str, token: str) -> Path:
+    """Validate and persist CLI authentication settings with private permissions.
+
+    Ensures the config directory has mode ``0700`` and the file has mode ``0600``.
+    Symlink and non-regular config targets are rejected.
+
+    Returns:
+        The configuration file path.
+
+    Raises:
+        CliError: If validation fails or the file cannot be written safely.
+    """
+    try:
+        config = AuthConfig.model_validate({"api_url": url, "api_token": token})
+    except ValidationError:
+        raise CliError("Authentication configuration is missing or invalid") from None
+
+    path = _config_path()
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.parent.chmod(0o700)
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise CliError("CLI config path is not a regular file")
+        if path.exists():
+            path.chmod(0o600)
+        set_key(path, "OMP_API_URL", str(config.api_url))
+        path.chmod(0o600)
+        set_key(path, "OMP_API_TOKEN", config.api_token.get_secret_value())
+        path.chmod(0o600)
+    except OSError as error:
+        logger.debug("CLI config write failed: %s", type(error).__name__)
+        raise CliError("Unable to write CLI config") from None
+    return path
 
 
 def _api_endpoint(server: str, path: str) -> str:
@@ -104,13 +173,13 @@ def _post_model[ModelT: BaseModel](
         )
     except (httpx2.RequestError, httpx2.InvalidURL) as error:
         logger.debug("Control-plane request failed: %s", type(error).__name__)
-        raise CliError("无法连接控制面") from None
+        raise CliError("Unable to connect to control plane") from None
     if not response.is_success:
-        raise CliError(f"控制面请求失败（{_response_detail(response)}）")
+        raise CliError(f"Control-plane request failed ({_response_detail(response)})")
     try:
         return response_type.model_validate(response.json())
     except ValueError:
-        raise CliError("控制面返回了无效响应") from None
+        raise CliError("Control plane returned an invalid response") from None
 
 
 def _upload_to_storage(
@@ -139,18 +208,28 @@ def _upload_to_storage(
         )
     except (httpx2.RequestError, httpx2.InvalidURL) as error:
         logger.debug("Storage request failed: %s", type(error).__name__)
-        raise CliError("上游上传失败（网络错误）") from None
+        raise CliError("Upstream upload failed (network error)") from None
     if not response.is_success:
-        raise CliError(f"上游上传失败（HTTP {response.status_code}）")
+        raise CliError(f"Upstream upload failed (HTTP {response.status_code})")
+
+
+@app.command()
+def auth(
+    url: Annotated[str, typer.Option("--url", help="Control-plane base URL")],
+    token: Annotated[str, typer.Option("--token", help="Business authorization token")],
+) -> None:
+    """Save CLI authentication configuration."""
+    try:
+        path = _write_auth_config(url, token)
+        typer.echo(f"Authentication config saved to {path}")
+    except CliError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()
 def upload(
     path: Annotated[Path, typer.Argument(help="Local file to upload")],
-    server: Annotated[
-        str | None,
-        typer.Option("--server", help="Control-plane base URL; defaults to OMP_API_URL"),
-    ] = None,
 ) -> None:
     """Upload one file and emit its final key and download URL.
 
@@ -167,21 +246,22 @@ def upload(
     """
     try:
         if not path.is_file():
-            raise CliError(f"不是可读普通文件：{path}")
+            raise CliError(f"Not a readable regular file: {path}")
         try:
             content_type = _content_type(path)
         except OSError as error:
             logger.debug("MIME detection could not read file: %s", type(error).__name__)
-            raise CliError(f"无法读取本地文件：{path}") from None
+            raise CliError(f"Unable to read local file: {path}") from None
 
-        token = _api_token()
-        api_url = server or os.getenv("OMP_API_URL") or DEFAULT_API_URL
+        settings = _load_cli_settings()
+        token = settings.api_token.get_secret_value()
+        api_url = str(settings.api_url)
         with httpx2.Client() as client:
             try:
                 with path.open("rb") as file:
                     file_stat = os.fstat(file.fileno())
                     if not stat.S_ISREG(file_stat.st_mode):
-                        raise CliError(f"不是普通文件：{path}")
+                        raise CliError(f"Not a regular file: {path}")
                     grant = _post_model(
                         client,
                         _api_endpoint(api_url, "/api/v1/uploads"),
@@ -192,7 +272,7 @@ def upload(
                     _upload_to_storage(client, grant, file, file_stat.st_size)
             except OSError as error:
                 logger.debug("Local file read failed: %s", type(error).__name__)
-                raise CliError(f"无法读取本地文件：{path}") from None
+                raise CliError(f"Unable to read local file: {path}") from None
             try:
                 download = _post_model(
                     client,
@@ -202,9 +282,13 @@ def upload(
                     DownloadGrant,
                 )
             except CliError:
-                raise CliError(f"对象已上传为 `{grant.key}`，但下载链接签发失败") from None
+                raise CliError(
+                    f"Object uploaded as `{grant.key}`, but download URL issuance failed"
+                ) from None
             if download.key != grant.key:
-                raise CliError(f"对象已上传为 `{grant.key}`，但下载链接返回了不同的 key")
+                raise CliError(
+                    f"Object uploaded as `{grant.key}`, but download URL returned a different key"
+                )
         typer.echo(download.model_dump_json())
     except CliError as error:
         typer.echo(str(error), err=True)

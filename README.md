@@ -39,10 +39,13 @@ uv run fastapi dev src/oh_my_pastebin/app.py
 CLI 只需要控制面地址和业务 token，不需要存储凭据：
 
 ```sh
-export OMP_API_URL=http://127.0.0.1:59000
-export OMP_API_TOKEN=replace-with-a-secret
+uv run omp auth --url http://127.0.0.1:59000 --token replace-with-a-secret
 uv run omp upload ./report.pdf
 ```
+
+`auth` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/omp/env`，目录权限为 `0700`，
+文件权限为 `0600`。进程环境中的 `OMP_API_URL` 和 `OMP_API_TOKEN` 会各自独立覆盖该文件中的
+对应值；未在进程环境设置的字段仍从文件读取。
 
 成功时 stdout 只有一行 JSON：
 

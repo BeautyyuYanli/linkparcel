@@ -6,11 +6,30 @@ from typing import cast
 
 import httpx2
 import pytest
+from dotenv import dotenv_values
 from typer.testing import CliRunner
 
 from oh_my_pastebin import cli
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(path))
+    monkeypatch.delenv("OMP_API_URL", raising=False)
+    monkeypatch.delenv("OMP_API_TOKEN", raising=False)
+    return path
+
+
+def _write_cli_config(config_home: Path, *, url: str, token: str) -> None:
+    config_dir = config_home / "omp"
+    config_dir.mkdir(parents=True)
+    (config_dir / "env").write_text(
+        f"OMP_API_URL={url}\nOMP_API_TOKEN={token}\n",
+        encoding="utf-8",
+    )
 
 
 def _reject_http_requests(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,8 +40,79 @@ def _reject_http_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
 
+def test_auth_writes_private_xdg_config(config_home: Path) -> None:
+    result = runner.invoke(
+        cli.app,
+        ["auth", "--url", "https://api.test", "--token", "secret value"],
+    )
+
+    config_path = config_home / "omp" / "env"
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == f"Authentication config saved to {config_path}\n"
+    stored_config = dotenv_values(config_path)
+    stored_url = stored_config["OMP_API_URL"]
+    assert stored_url is not None
+    assert stored_url.removesuffix("/") == "https://api.test"
+    assert stored_config["OMP_API_TOKEN"] == "secret value"
+    assert config_path.parent.stat().st_mode & 0o777 == 0o700
+    assert config_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_auth_tightens_existing_config_permissions(config_home: Path) -> None:
+    config_dir = config_home / "omp"
+    config_dir.mkdir(parents=True)
+    config_dir.chmod(0o777)
+    config_path = config_dir / "env"
+    config_path.write_text("OMP_API_TOKEN=old\n", encoding="utf-8")
+    config_path.chmod(0o666)
+
+    result = runner.invoke(
+        cli.app,
+        ["auth", "--url", "https://api.test", "--token", "new"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert config_dir.stat().st_mode & 0o777 == 0o700
+    assert config_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_auth_defaults_to_home_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setenv("HOME", str(home))
+
+    result = runner.invoke(
+        cli.app,
+        ["auth", "--url", "https://api.test", "--token", "secret"],
+    )
+
+    config_path = home / ".config" / "omp" / "env"
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout == f"Authentication config saved to {config_path}\n"
+    assert dotenv_values(config_path)["OMP_API_TOKEN"] == "secret"
+
+
+@pytest.mark.parametrize(
+    ("invalid_option", "invalid_value"),
+    [("--url", ""), ("--url", "not-a-url"), ("--token", "")],
+)
+def test_auth_rejects_invalid_values(
+    config_home: Path,
+    invalid_option: str,
+    invalid_value: str,
+) -> None:
+    args = ["auth", "--url", "https://api.test", "--token", "secret"]
+    args[args.index(invalid_option) + 1] = invalid_value
+
+    result = runner.invoke(cli.app, args)
+
+    assert result.exit_code != 0
+    assert "Authentication configuration is missing or invalid" in result.stderr
+    assert not (config_home / "omp" / "env").exists()
+
+
 def test_upload_keeps_business_authorization_off_storage_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_home: Path
 ) -> None:
     path = tmp_path / "report.pdf"
     content = b"%PDF-1.7\nexample"
@@ -66,18 +156,64 @@ def test_upload_keeps_business_authorization_off_storage_request(
 
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
+    _write_cli_config(config_home, url="https://api.test", token="secret")
 
-    result = runner.invoke(
-        cli.app,
-        ["upload", str(path)],
-        env={"OMP_API_TOKEN": "secret", "OMP_API_URL": "https://api.test"},
-    )
+    result = runner.invoke(cli.app, ["upload", str(path)])
 
     assert result.exit_code == 0, result.stderr
     assert result.stdout == (
         '{"key":"report-1.pdf","download_url":"https://storage.test/download"}\n'
     )
     assert len(requests) == 3
+
+
+def test_upload_process_environment_overrides_file_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    config_home: Path,
+) -> None:
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.7\nexample")
+    _write_cli_config(config_home, url="https://api.test", token="wrong")
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.host == "api.test"
+        assert request.headers["authorization"] == "Bearer secret"
+        return httpx2.Response(503)
+
+    client = httpx2.Client(transport=httpx2.MockTransport(handle))
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
+
+    result = runner.invoke(
+        cli.app,
+        ["upload", str(path)],
+        env={"OMP_API_TOKEN": "secret"},
+    )
+
+    assert result.exit_code != 0
+    assert "HTTP 503" in result.stderr
+
+
+def test_upload_defaults_to_home_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    path = tmp_path / "report.pdf"
+    path.write_bytes(b"%PDF-1.7\nexample")
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setenv("HOME", str(home))
+    _write_cli_config(home / ".config", url="https://api.test", token="secret")
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.host == "api.test"
+        assert request.headers["authorization"] == "Bearer secret"
+        return httpx2.Response(503)
+
+    client = httpx2.Client(transport=httpx2.MockTransport(handle))
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
+
+    result = runner.invoke(cli.app, ["upload", str(path)])
+
+    assert result.exit_code != 0
+    assert "HTTP 503" in result.stderr
 
 
 def test_upload_falls_back_when_puremagic_cannot_identify_file(
@@ -159,7 +295,7 @@ def test_upload_reports_successful_object_when_download_grant_fails(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "对象已上传为 `report.pdf`，但下载链接签发失败" in result.stderr
+    assert "Object uploaded as `report.pdf`, but download URL issuance failed" in result.stderr
     assert sum(request.url.path == "/api/v1/uploads" for request in requests) == 1
     assert sum(request.url.host == "storage.test" for request in requests) == 1
     assert sum(request.url.path == "/api/v1/downloads" for request in requests) == 1
@@ -177,7 +313,7 @@ def test_upload_maps_invalid_control_plane_url_to_cli_error(tmp_path: Path) -> N
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "无法连接控制面" in result.stderr
+    assert "Authentication configuration is missing or invalid" in result.stderr
 
 
 def test_upload_maps_invalid_presigned_url_to_storage_error(
@@ -205,7 +341,7 @@ def test_upload_maps_invalid_presigned_url_to_storage_error(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "上游上传失败（网络错误）" in result.stderr
+    assert "Upstream upload failed (network error)" in result.stderr
 
 
 def test_upload_maps_control_plane_transport_failure_to_safe_error(
@@ -224,7 +360,7 @@ def test_upload_maps_control_plane_transport_failure_to_safe_error(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "无法连接控制面" in result.stderr
+    assert "Unable to connect to control plane" in result.stderr
 
 
 def test_upload_maps_storage_transport_failure_to_safe_error(
@@ -254,7 +390,7 @@ def test_upload_maps_storage_transport_failure_to_safe_error(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "上游上传失败（网络错误）" in result.stderr
+    assert "Upstream upload failed (network error)" in result.stderr
 
 
 @pytest.mark.parametrize("token", [None, ""])
@@ -275,7 +411,7 @@ def test_upload_requires_nonempty_api_token_before_network(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "OMP_API_TOKEN 未设置或为空" in result.stderr
+    assert "Authentication configuration is missing or invalid" in result.stderr
 
 
 @pytest.mark.parametrize("path_kind", ["missing", "directory"])
@@ -293,7 +429,7 @@ def test_upload_rejects_non_file_path_before_network(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "不是可读普通文件" in result.stderr
+    assert "Not a readable regular file" in result.stderr
 
 
 def test_upload_reports_storage_non_success_without_requesting_download(
@@ -325,7 +461,7 @@ def test_upload_reports_storage_non_success_without_requesting_download(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "上游上传失败（HTTP 403）" in result.stderr
+    assert "Upstream upload failed (HTTP 403)" in result.stderr
     assert len(requests) == 2
 
 
@@ -346,7 +482,7 @@ def test_upload_rejects_malformed_successful_control_plane_response(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "控制面返回了无效响应" in result.stderr
+    assert "Control plane returned an invalid response" in result.stderr
 
 
 def test_upload_rejects_download_grant_for_different_key(
@@ -384,4 +520,7 @@ def test_upload_rejects_download_grant_for_different_key(
 
     assert result.exit_code != 0
     assert result.stdout == ""
-    assert "对象已上传为 `report.pdf`，但下载链接返回了不同的 key" in result.stderr
+    assert (
+        "Object uploaded as `report.pdf`, but download URL returned a different key"
+        in result.stderr
+    )
