@@ -3,6 +3,7 @@
 !.env.example
 .dev.r2.env
 
+.context/
 .venv/
 
 __pycache__/
