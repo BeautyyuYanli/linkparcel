@@ -1,0 +1,25 @@
+name: oh-my-pastebin-r2
+
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      OMP_STORAGE_URI: "${OMP_STORAGE_URI:?set OMP_STORAGE_URI via --env-file}"
+      OMP_API_TOKEN: "${OMP_API_TOKEN:?set OMP_API_TOKEN via --env-file}"
+      OMP_UPLOAD_URL_TTL_SECONDS: "${OMP_UPLOAD_URL_TTL_SECONDS:-300}"
+      OMP_DOWNLOAD_URL_TTL_SECONDS: "${OMP_DOWNLOAD_URL_TTL_SECONDS:-3600}"
+    ports:
+      - "59000:59000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:59000/openapi.json', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 10

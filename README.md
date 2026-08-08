@@ -55,6 +55,8 @@ uv run omp upload ./report.pdf
 
 ## Docker Compose
 
+### MinIO
+
 内置的 Compose 配置会构建 API、启动私有 MinIO，并在 API 启动前创建 bucket。
 先创建配置并至少替换 `OMP_API_TOKEN`：
 
@@ -80,6 +82,27 @@ uv run omp upload ./report.pdf
 
 ```sh
 docker compose down
+```
+
+### Cloudflare R2
+
+R2 版本只运行 API，启动时通过 `--env-file` 指定服务端配置：
+
+```sh
+docker compose --env-file .dev.r2.env -f compose.r2.yaml up --build -d
+docker compose --env-file .dev.r2.env -f compose.r2.yaml ps
+```
+
+宿主机 CLI 可加载同一配置文件：
+
+```sh
+uv run --env-file .dev.r2.env omp upload ./report.pdf
+```
+
+停止 R2 版本：
+
+```sh
+docker compose --env-file .dev.r2.env -f compose.r2.yaml down
 ```
 
 ## 开发检查

@@ -1,4 +1,5 @@
 .context/
+.dev.r2.env
 .env
 .git/
 .pytest_cache/
