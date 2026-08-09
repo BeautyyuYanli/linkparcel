@@ -11,8 +11,8 @@
 uv sync
 ```
 
-服务端需要一个 OpenDAL URI。对应 backend 必须支持 `list`、`presign_write`、
-`presign_read` 和 `write_with_content_type`，并由 backend 自己的配置方式提供存储凭据。
+服务端需要一个 OpenDAL URI。对应 backend 必须支持 `list`、`presign_write` 和
+`presign_read`，并由 backend 自己的配置方式提供存储凭据。
 存储必须保持私有。
 
 复制 `.env.example` 后填写真实配置，再将变量导入服务端进程环境：
@@ -54,7 +54,8 @@ uv run omp upload ./report.pdf
 ```
 
 同名对象由服务端基于一次存储列表选择 `-1`、`-2` 等后缀。首版不协调并发上传，
-也不重试失败的上传或签名请求。
+也不重试失败的上传或签名请求。backend 支持相应能力时，上传对象使用
+`application/octet-stream`，并用最终 key 设置附件文件名；不支持时跳过对应元数据。
 
 ## Docker Compose
 

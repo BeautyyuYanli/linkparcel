@@ -18,6 +18,7 @@ class _Capabilities:
     presign_write = True
     presign_read = True
     write_with_content_type = True
+    write_with_content_disposition = True
 
 
 class _Metadata:
@@ -51,7 +52,12 @@ class _Operator:
         return iterate()
 
     async def presign_write(
-        self, path: str, expire_second: int, *, content_type: str | None = None
+        self,
+        path: str,
+        expire_second: int,
+        *,
+        content_type: str | None = None,
+        content_disposition: str | None = None,
     ) -> PresignedRequest:
         return cast(
             PresignedRequest,
@@ -69,7 +75,12 @@ class _ListFailure(_Operator):
 
 class _WriteFailure(_Operator):
     async def presign_write(
-        self, path: str, expire_second: int, *, content_type: str | None = None
+        self,
+        path: str,
+        expire_second: int,
+        *,
+        content_type: str | None = None,
+        content_disposition: str | None = None,
     ) -> PresignedRequest:
         raise exceptions.RateLimited("s3://secret-storage-configuration")
 
@@ -160,7 +171,7 @@ def test_api_routes_return_wire_models_and_disable_grant_caching() -> None:
         upload = client.post(
             "/api/v1/uploads",
             headers=headers,
-            json={"name": "hello.txt", "content_type": "text/plain"},
+            json={"name": "hello.txt"},
         )
         download = client.post(
             "/api/v1/downloads", headers=headers, json={"key": upload.json()["key"]}
@@ -194,7 +205,7 @@ def test_api_rejects_invalid_upload_name_with_422() -> None:
         response = client.post(
             "/api/v1/uploads",
             headers={"Authorization": "Bearer secret"},
-            json={"name": "nested/file.txt", "content_type": "text/plain"},
+            json={"name": "nested/file.txt"},
         )
 
     assert response.status_code == 422
@@ -218,7 +229,7 @@ def test_non_ascii_configured_token_still_rejects_invalid_credentials_cleanly() 
             cast(AsyncOperator, _WriteFailure()),
             "POST",
             "/api/v1/uploads",
-            {"name": "new.txt", "content_type": "text/plain"},
+            {"name": "new.txt"},
         ),
         (
             cast(AsyncOperator, _ReadFailure()),

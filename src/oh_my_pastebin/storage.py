@@ -14,7 +14,6 @@ REQUIRED_CAPABILITIES = (
     "list",
     "presign_write",
     "presign_read",
-    "write_with_content_type",
 )
 
 
@@ -40,9 +39,10 @@ def create_operator(storage_uri: str) -> AsyncOperator:
 
 
 async def ensure_operator_ready(operator: AsyncOperator) -> None:
-    """Validate required capabilities, then perform the backend readiness check.
+    """Validate required operations, then perform the backend readiness check.
 
     ``operator.check()`` may perform external I/O.
+    Content type and disposition support are optional upload enhancements.
 
     Raises:
         UnsupportedStorageError: If any required capability is absent.

@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from typing import cast
 
 import httpx2
 import pytest
@@ -123,10 +122,7 @@ def test_upload_keeps_business_authorization_off_storage_request(
         requests.append(request)
         if request.url.path == "/api/v1/uploads":
             assert request.headers["authorization"] == "Bearer secret"
-            assert json.loads(request.content) == {
-                "name": "report.pdf",
-                "content_type": "application/pdf",
-            }
+            assert json.loads(request.content) == {"name": "report.pdf"}
             return httpx2.Response(
                 200,
                 json={
@@ -214,55 +210,6 @@ def test_upload_defaults_to_home_config(tmp_path: Path, monkeypatch: pytest.Monk
 
     assert result.exit_code != 0
     assert "HTTP 503" in result.stderr
-
-
-def test_upload_falls_back_when_puremagic_cannot_identify_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "unknown.bin"
-    path.write_bytes(b"unknown")
-    observed_content_type: str | None = None
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        nonlocal observed_content_type
-        if request.url.host != "storage.test":
-            assert request.url.host == "127.0.0.1"
-            assert request.url.port == 59000
-        if request.url.path == "/api/v1/uploads":
-            payload = cast(dict[str, str], json.loads(request.content))
-            observed_content_type = payload["content_type"]
-            return httpx2.Response(
-                200,
-                json={
-                    "key": "unknown.bin",
-                    "method": "PUT",
-                    "upload_url": "https://storage.test/upload",
-                    "headers": {},
-                },
-            )
-        if request.url.host == "storage.test":
-            return httpx2.Response(204)
-        return httpx2.Response(
-            200,
-            json={"key": "unknown.bin", "download_url": "https://storage.test/download"},
-        )
-
-    client = httpx2.Client(transport=httpx2.MockTransport(handle))
-    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
-
-    def unidentified(*_args: object, **_kwargs: object) -> str:
-        raise cli.PureError()
-
-    monkeypatch.setattr(
-        cli,
-        "from_file",
-        unidentified,
-    )
-
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
-
-    assert result.exit_code == 0
-    assert observed_content_type == "application/octet-stream"
 
 
 def test_upload_reports_successful_object_when_download_grant_fails(

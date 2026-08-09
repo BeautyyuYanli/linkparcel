@@ -8,6 +8,8 @@ the outcome of races between grant creation and direct upload.
 import os
 import unicodedata
 from itertools import count
+from typing import TypedDict
+from urllib.parse import quote
 
 from opendal import AsyncOperator
 
@@ -21,6 +23,12 @@ from oh_my_pastebin.models import (
 )
 
 MAX_KEY_CODEPOINTS = 200
+DEFAULT_CONTENT_TYPE = "application/octet-stream"
+
+
+class _PresignWriteOptions(TypedDict, total=False):
+    content_type: str
+    content_disposition: str
 
 
 def validate_key(key: str) -> str:
@@ -90,10 +98,12 @@ async def list_files(operator: AsyncOperator) -> FileList:
 async def issue_upload_grant(
     operator: AsyncOperator, request: UploadRequest, *, ttl_seconds: int
 ) -> UploadGrant:
-    """Choose a key from one list snapshot and presign a content-typed write.
+    """Choose a key from one list snapshot and presign a direct write.
 
     The OpenDAL calls list storage and create a signed request but do not create an
-    object or reserve the chosen key.
+    object or reserve the chosen key. Binary content type and an ASCII-safe RFC 8187
+    attachment filename are included independently when the backend advertises support
+    for each option.
 
     Raises:
         ValueError: If the requested or generated key is invalid.
@@ -103,10 +113,17 @@ async def issue_upload_grant(
     validate_key(request.name)
     existing_keys = set(await _list_file_keys(operator))
     key = choose_key(request.name, existing_keys)
+    capabilities = operator.capability()
+    options = _PresignWriteOptions()
+    if capabilities.write_with_content_type:
+        options["content_type"] = DEFAULT_CONTENT_TYPE
+    if capabilities.write_with_content_disposition:
+        encoded_key = quote(key, safe="")
+        options["content_disposition"] = f"attachment; filename*=UTF-8''{encoded_key}"
     presigned = await operator.presign_write(
         key,
         ttl_seconds,
-        content_type=request.content_type,
+        **options,
     )
     return UploadGrant(
         key=key,

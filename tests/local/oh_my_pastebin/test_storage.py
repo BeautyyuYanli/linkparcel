@@ -12,7 +12,8 @@ class _Capabilities:
     list = True
     presign_write = True
     presign_read = True
-    write_with_content_type = True
+    write_with_content_type = False
+    write_with_content_disposition = False
 
 
 class _Operator:
@@ -37,7 +38,7 @@ async def test_ensure_operator_ready_checks_backend_after_capabilities() -> None
 
 @pytest.mark.parametrize(
     "capability_name",
-    ["list", "presign_write", "presign_read", "write_with_content_type"],
+    ["list", "presign_write", "presign_read"],
 )
 async def test_ensure_operator_ready_reports_each_missing_capability_without_checking(
     capability_name: str,

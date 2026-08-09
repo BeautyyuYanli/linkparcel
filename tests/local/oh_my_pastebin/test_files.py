@@ -35,12 +35,31 @@ class _PresignedRequest:
         self.headers = headers
 
 
+class _Capabilities:
+    def __init__(self, *, content_type: bool = True, content_disposition: bool = True) -> None:
+        self.write_with_content_type = content_type
+        self.write_with_content_disposition = content_disposition
+
+
 class _Operator:
-    def __init__(self, entries: list[_Entry]) -> None:
+    def __init__(
+        self,
+        entries: list[_Entry],
+        *,
+        content_type: bool = True,
+        content_disposition: bool = True,
+    ) -> None:
         self.entries = entries
+        self.capabilities = _Capabilities(
+            content_type=content_type,
+            content_disposition=content_disposition,
+        )
         self.list_calls = 0
-        self.write_calls: list[tuple[str, int, str | None]] = []
+        self.write_calls: list[tuple[str, int, dict[str, str]]] = []
         self.read_calls: list[tuple[str, int]] = []
+
+    def capability(self) -> _Capabilities:
+        return self.capabilities
 
     async def list(self, path: str) -> AsyncIterator[Entry]:
         assert path == ""
@@ -53,12 +72,15 @@ class _Operator:
         return iterate()
 
     async def presign_write(
-        self, path: str, expire_second: int, *, content_type: str | None = None
+        self,
+        path: str,
+        expire_second: int,
+        **options: str,
     ) -> PresignedRequest:
-        self.write_calls.append((path, expire_second, content_type))
+        self.write_calls.append((path, expire_second, options))
         return cast(
             PresignedRequest,
-            _PresignedRequest("PUT", "custom://write", {"content-type": content_type or ""}),
+            _PresignedRequest("PUT", "custom://write", {"x-signed": "yes"}),
         )
 
     async def presign_read(self, path: str, expire_second: int) -> PresignedRequest:
@@ -105,37 +127,83 @@ async def test_list_files_ignores_directories_and_sorts_keys() -> None:
 
 
 @pytest.mark.parametrize(
-    ("upload_request", "expected_key", "expected_content_type"),
+    ("content_type", "content_disposition", "expected_options"),
     [
         (
-            UploadRequest(name="report.pdf", content_type="application/pdf"),
-            "report-1.pdf",
-            "application/pdf",
+            True,
+            True,
+            {
+                "content_type": "application/octet-stream",
+                "content_disposition": "attachment; filename*=UTF-8''report-1.pdf",
+            },
         ),
-        (UploadRequest(name="new.bin"), "new.bin", "application/octet-stream"),
+        (True, False, {"content_type": "application/octet-stream"}),
+        (
+            False,
+            True,
+            {"content_disposition": "attachment; filename*=UTF-8''report-1.pdf"},
+        ),
+        (False, False, {}),
     ],
 )
-async def test_issue_upload_grant_lists_once_and_forwards_presign_shape(
-    upload_request: UploadRequest,
-    expected_key: str,
-    expected_content_type: str,
+async def test_issue_upload_grant_uses_only_supported_content_metadata(
+    content_type: bool,
+    content_disposition: bool,
+    expected_options: dict[str, str],
 ) -> None:
-    fake = _Operator([_Entry("report.pdf"), _Entry("report-2.pdf")])
+    fake = _Operator(
+        [_Entry("report.pdf"), _Entry("report-2.pdf")],
+        content_type=content_type,
+        content_disposition=content_disposition,
+    )
+
+    await issue_upload_grant(
+        cast(AsyncOperator, fake),
+        UploadRequest(name="report.pdf"),
+        ttl_seconds=300,
+    )
+
+    assert fake.list_calls == 1
+    assert fake.write_calls == [("report-1.pdf", 300, expected_options)]
+
+
+async def test_issue_upload_grant_forwards_presigned_request_components() -> None:
+    fake = _Operator([], content_type=False, content_disposition=False)
 
     grant = await issue_upload_grant(
         cast(AsyncOperator, fake),
-        upload_request,
+        UploadRequest(name="new.bin"),
         ttl_seconds=300,
     )
 
     assert grant.model_dump() == {
-        "key": expected_key,
+        "key": "new.bin",
         "method": "PUT",
         "upload_url": "custom://write",
-        "headers": {"content-type": expected_content_type},
+        "headers": {"x-signed": "yes"},
     }
-    assert fake.list_calls == 1
-    assert fake.write_calls == [(expected_key, 300, expected_content_type)]
+
+
+async def test_issue_upload_grant_encodes_unicode_final_key_in_disposition() -> None:
+    fake = _Operator(
+        [_Entry("报告.aab")],
+        content_type=False,
+        content_disposition=True,
+    )
+
+    await issue_upload_grant(
+        cast(AsyncOperator, fake),
+        UploadRequest(name="报告.aab"),
+        ttl_seconds=300,
+    )
+
+    assert fake.write_calls == [
+        (
+            "报告-1.aab",
+            300,
+            {"content_disposition": ("attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A-1.aab")},
+        )
+    ]
 
 
 async def test_issue_download_grant_does_not_check_existence() -> None:

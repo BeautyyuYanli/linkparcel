@@ -20,10 +20,9 @@ class FileList(BaseModel):
 
 
 class UploadRequest(BaseModel):
-    """The caller's original file name and best-effort content metadata."""
+    """The caller's original file name."""
 
     name: str
-    content_type: str = "application/octet-stream"
 
 
 class UploadGrant(BaseModel):

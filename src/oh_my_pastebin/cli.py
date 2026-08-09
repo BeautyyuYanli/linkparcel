@@ -16,7 +16,6 @@ from typing import Annotated, BinaryIO, cast
 import httpx2
 import typer
 from dotenv import set_key
-from puremagic.main import PureError, from_file  # pyright: ignore[reportUnknownVariableType]
 from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,7 +28,6 @@ from oh_my_pastebin.models import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_API_URL = "http://127.0.0.1:59000"
-DEFAULT_CONTENT_TYPE = "application/octet-stream"
 app = typer.Typer(no_args_is_help=True)
 AuthToken = Annotated[SecretStr, Field(min_length=1)]
 
@@ -61,19 +59,6 @@ class CliSettings(BaseSettings):
 @app.callback()
 def main() -> None:
     """Upload files to a private Oh My Pastebin deployment."""
-
-
-def _content_type(path: Path) -> str:
-    """Read the file for best-effort MIME detection.
-
-    Identification failures return the default type; file access errors propagate as
-    ``OSError`` for the command boundary to report.
-    """
-    try:
-        detected = from_file(str(path), mime=True)
-    except (PureError, ValueError):
-        return DEFAULT_CONTENT_TYPE
-    return detected or DEFAULT_CONTENT_TYPE
 
 
 def _config_path() -> Path:
@@ -247,11 +232,6 @@ def upload(
     try:
         if not path.is_file():
             raise CliError(f"Not a readable regular file: {path}")
-        try:
-            content_type = _content_type(path)
-        except OSError as error:
-            logger.debug("MIME detection could not read file: %s", type(error).__name__)
-            raise CliError(f"Unable to read local file: {path}") from None
 
         settings = _load_cli_settings()
         token = settings.api_token.get_secret_value()
@@ -266,7 +246,7 @@ def upload(
                         client,
                         _api_endpoint(api_url, "/api/v1/uploads"),
                         token,
-                        UploadRequest(name=path.name, content_type=content_type),
+                        UploadRequest(name=path.name),
                         UploadGrant,
                     )
                     _upload_to_storage(client, grant, file, file_stat.st_size)
