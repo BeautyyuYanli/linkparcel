@@ -59,9 +59,9 @@ uv run lpc upload ./report.pdf
 
 ## Docker Compose
 
-### MinIO
+### SeaweedFS mini
 
-内置的 Compose 配置会构建 API、启动私有 MinIO，并在 API 启动前创建 bucket。
+内置的 Compose 配置会构建 API、启动私有 SeaweedFS mini，并在 API 启动前创建 bucket。
 先创建配置并至少替换 `LPC_API_TOKEN`：
 
 ```sh
@@ -70,8 +70,8 @@ docker compose up --build -d
 docker compose ps
 ```
 
-宿主机只发布运行链路必需的两个端口：API 使用 `59000`，CLI 直传和下载使用 MinIO API
-的 `59001`。两个端口绑定所有宿主机接口，MinIO Console 不发布。CLI 可在宿主机运行：
+宿主机只发布运行链路必需的两个端口：API 使用 `59000`，CLI 直传和下载使用 SeaweedFS S3 API
+的 `59001`。两个端口绑定所有宿主机接口，SeaweedFS 管理端口不发布。CLI 可在宿主机运行：
 
 ```sh
 set -a
@@ -80,13 +80,20 @@ set +a
 uv run lpc upload ./report.pdf
 ```
 
-预签名 URL 使用 `minio.localhost:59001`：该名称在 Compose 网络中指向 MinIO，在
+预签名 URL 使用 `seaweedfs.localhost:59001`：该名称在 Compose 网络中指向 SeaweedFS，在
 当前宿主机上指向 loopback，因此 API 容器和宿主机 CLI 使用的是同一个 endpoint。
 停止服务但保留对象数据：
 
 ```sh
 docker compose down
 ```
+
+SeaweedFS mini 使用 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `S3_BUCKET`
+配置凭据和自动创建的 bucket，数据保存在独立的 `seaweedfs-data` 卷。
+从旧版 MinIO Compose 升级时，需要将 `.env` 中的 `MINIO_ROOT_USER`、
+`MINIO_ROOT_PASSWORD`、`MINIO_BUCKET` 分别改为上述变量。
+旧 `minio-data` 卷不会自动迁移，也不能直接供 SeaweedFS 使用；如需保留已有文件，
+请先通过 S3 接口复制到 SeaweedFS，验证后再停用旧 MinIO。
 
 ### Cloudflare R2
 
@@ -118,8 +125,8 @@ docker compose --env-file .dev.r2.env -f compose.r2.yaml down
 CLI 配置目录改为 `${XDG_CONFIG_HOME:-$HOME/.config}/lpc`，可重新运行 `lpc auth`
 写入配置。Skill 目录与调用名改为 `linkparcel` / `$linkparcel`。
 
-已有部署应保留原存储 URI、MinIO 凭据和 bucket 名，只修改变量名称。
-使用旧版默认值的 MinIO 部署需显式设置 `MINIO_BUCKET=omp`、`MINIO_ROOT_USER=ompdev`
+仅迁移项目名称时，已有部署应保留原存储 URI、存储凭据和 bucket 名，只修改变量名称。
+继续使用旧 MinIO Compose 的部署需显式设置 `MINIO_BUCKET=omp`、`MINIO_ROOT_USER=ompdev`
 和原来的 `MINIO_ROOT_PASSWORD`，避免切换到新 bucket。
 若重命名本地目录，请通过 `docker compose -p <原项目名>` 保持已有容器和数据卷的归属；
 R2 的默认 Compose 项目名已改为 `linkparcel-r2`，已有部署可用
