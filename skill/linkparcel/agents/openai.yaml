@@ -1,4 +1,4 @@
 interface:
   display_name: "LinkParcel"
-  short_description: "Upload local files with the lpc CLI"
-  default_prompt: "Use $linkparcel to upload a local file and return its temporary download link."
+  short_description: "Upload, list files, and get download links with lpc"
+  default_prompt: "Use $linkparcel to upload a file, list stored files, or issue a temporary download link."
