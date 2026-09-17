@@ -1,1 +1,1 @@
-"""Private file-sharing service control plane and direct-upload CLI."""
+"""Private file sharing with shared services and HTTP/CLI controllers."""

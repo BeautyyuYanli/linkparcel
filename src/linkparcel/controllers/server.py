@@ -3,21 +3,22 @@
 The API never proxies object bytes. Its lifespan owns one OpenDAL async operator;
 routes only list keys or issue short-lived presigned requests.
 
-OpenDAL 0.47.5 exposes its concrete errors as sibling ``Exception`` classes, so
-route boundaries use the complete public family rather than only ``exceptions.Error``.
+Business operations live in ``linkparcel.services``; only this controller validates
+the application Bearer token and maps service failures to HTTP responses.
 """
 
 import logging
+import secrets
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from typing import Never, cast
+from dataclasses import dataclass
+from typing import Annotated, Never, cast
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, status
-from opendal import AsyncOperator, exceptions
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from opendal import AsyncOperator
 
-from linkparcel.auth import require_api_token
-from linkparcel.config import Settings
-from linkparcel.files import issue_download_grant, issue_upload_grant, list_files
+from linkparcel.config import ServerSettings
 from linkparcel.models import (
     DownloadGrant,
     DownloadRequest,
@@ -25,32 +26,50 @@ from linkparcel.models import (
     UploadGrant,
     UploadRequest,
 )
-from linkparcel.storage import (
-    AppResources,
+from linkparcel.services.files import issue_download_grant, issue_upload_grant, list_files
+from linkparcel.services.storage import (
+    OPENDAL_ERRORS,
     UnsupportedStorageError,
     create_operator,
     ensure_operator_ready,
 )
 
 logger = logging.getLogger(__name__)
-SettingsFactory = Callable[[], Settings]
+SettingsFactory = Callable[[], ServerSettings]
 OperatorFactory = Callable[[str], AsyncOperator]
 
-OPENDAL_ERRORS: tuple[type[Exception], ...] = (
-    exceptions.Error,
-    exceptions.Unexpected,
-    exceptions.Unsupported,
-    exceptions.ConfigInvalid,
-    exceptions.NotFound,
-    exceptions.PermissionDenied,
-    exceptions.IsADirectory,
-    exceptions.NotADirectory,
-    exceptions.AlreadyExists,
-    exceptions.IsSameFile,
-    exceptions.ConditionNotMatch,
-    exceptions.RateLimited,
-    exceptions.RangeNotSatisfied,
-)
+
+@dataclass(frozen=True, slots=True)
+class AppResources:
+    """Settings and one operator owned by a running server's lifespan.
+
+    Requests share the operator on the application's event loop. The OpenDAL Python
+    binding has no close method; shutdown releases the application state reference.
+    """
+
+    settings: ServerSettings
+    operator: AsyncOperator
+
+
+bearer_scheme = HTTPBearer(auto_error=False)
+BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
+
+
+async def require_api_token(request: Request, credentials: BearerCredentials) -> None:
+    """Accept only the application's Bearer token and expose no failure distinctions."""
+    resources = cast(AppResources, request.app.state.resources)
+    supplied = credentials.credentials if credentials is not None else ""
+    expected = resources.settings.api_token.get_secret_value()
+    if credentials is None or not secrets.compare_digest(
+        supplied.encode(),
+        expected.encode(),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_token)])
 
@@ -127,9 +146,9 @@ async def create_download(
     return grant
 
 
-def load_settings() -> Settings:
+def load_settings() -> ServerSettings:
     """Load required settings from the process environment at application startup."""
-    return Settings()  # pyright: ignore[reportCallIssue]
+    return ServerSettings()  # pyright: ignore[reportCallIssue]
 
 
 def create_app(

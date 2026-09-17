@@ -1,4 +1,4 @@
-"""File naming and OpenDAL operations for the API control plane.
+"""File naming and OpenDAL operations shared by the server and CLI.
 
 The operator root is the entire file-sharing service namespace. Upload naming deliberately uses
 one list snapshot and makes no reservation or concurrency guarantee; the backend owns
@@ -107,6 +107,8 @@ async def issue_upload_grant(
 
     Raises:
         ValueError: If the requested or generated key is invalid.
+        OverflowError: If the TTL exceeds OpenDAL's native integer range; positive
+            integer validation alone does not guarantee it fits that range.
         opendal.exceptions.*: A concrete public storage error from listing or
             presigning.
     """
@@ -140,6 +142,8 @@ async def issue_download_grant(
 
     Raises:
         ValueError: If the requested key is invalid.
+        OverflowError: If the TTL exceeds OpenDAL's native integer range; positive
+            integer validation alone does not guarantee it fits that range.
         opendal.exceptions.*: A concrete public storage error from presigning.
     """
     key = validate_key(request.key)

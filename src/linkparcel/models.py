@@ -1,4 +1,4 @@
-"""Pydantic wire models shared by the API and CLI.
+"""Pydantic request and result models shared by services and both controllers.
 
 URLs intentionally remain strings: the selected storage backend owns their syntax,
 and the HTTP client validates them only when making a request.

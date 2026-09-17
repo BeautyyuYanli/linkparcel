@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 from opendal import AsyncOperator
 
-from linkparcel.storage import ensure_operator_ready
+from linkparcel.services.storage import ensure_operator_ready
 
 
 class _Capabilities:

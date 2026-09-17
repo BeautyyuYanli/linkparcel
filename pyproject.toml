@@ -1,7 +1,7 @@
 [project]
 name = "linkparcel"
 version = "0.1.0"
-description = "Private authenticated direct-upload file-sharing service"
+description = "Private file sharing through a direct-storage CLI and authenticated HTTP API"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-lpc = "linkparcel.cli:app"
+lpc = "linkparcel.controllers.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.13,<0.12.0"]

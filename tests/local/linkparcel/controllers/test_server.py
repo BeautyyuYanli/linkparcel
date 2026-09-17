@@ -9,8 +9,8 @@ from opendal import AsyncOperator, exceptions
 from opendal.types import Entry, PresignedRequest
 from pydantic import SecretStr
 
-from linkparcel.app import create_app
-from linkparcel.config import Settings
+from linkparcel.config import ServerSettings
+from linkparcel.controllers.server import create_app
 
 
 class _Capabilities:
@@ -107,7 +107,7 @@ def _check_failure(_storage_uri: str) -> AsyncOperator:
 
 
 def _client(token: str = "secret", operator: AsyncOperator | None = None) -> TestClient:
-    settings = Settings(storage_uri="opaque", api_token=SecretStr(token))
+    settings = ServerSettings(storage_uri="opaque", api_token=SecretStr(token))
     fake = operator or cast(AsyncOperator, _Operator())
     application = create_app(
         settings_factory=lambda: settings,
@@ -153,7 +153,7 @@ def test_other_api_routes_require_bearer_token(
 
 def test_api_routes_return_wire_models_and_disable_grant_caching() -> None:
     storage_uri = "opaque://bucket/root?credential=server-only"
-    settings = Settings(storage_uri=storage_uri, api_token=SecretStr("secret"))
+    settings = ServerSettings(storage_uri=storage_uri, api_token=SecretStr("secret"))
     operator = cast(AsyncOperator, _Operator())
     factory_calls: list[str] = []
 
@@ -264,7 +264,7 @@ def test_storage_startup_failure_is_sanitized(
     caplog: pytest.LogCaptureFixture,
     operator_factory: Callable[[str], AsyncOperator],
 ) -> None:
-    settings = Settings(storage_uri=STARTUP_SECRET, api_token=SecretStr("secret"))
+    settings = ServerSettings(storage_uri=STARTUP_SECRET, api_token=SecretStr("secret"))
     application = create_app(
         settings_factory=lambda: settings,
         operator_factory=operator_factory,

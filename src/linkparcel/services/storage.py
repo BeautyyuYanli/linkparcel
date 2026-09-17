@@ -1,14 +1,27 @@
-"""OpenDAL construction, startup checks, and runtime ownership.
+"""Construct and check OpenDAL operators for either controller.
 
-One async operator belongs to the application lifespan and is reused by every route.
-The Python binding has no explicit close contract, so shutdown only releases this state.
+Callers own operator lifetimes. The Python binding has no explicit close contract.
+OpenDAL exposes concrete errors as siblings, so consumers must catch the public
+family below rather than only ``exceptions.Error``.
 """
 
-from dataclasses import dataclass
+from opendal import AsyncOperator, exceptions
 
-from opendal import AsyncOperator
-
-from linkparcel.config import Settings
+OPENDAL_ERRORS: tuple[type[Exception], ...] = (
+    exceptions.Error,
+    exceptions.Unexpected,
+    exceptions.Unsupported,
+    exceptions.ConfigInvalid,
+    exceptions.NotFound,
+    exceptions.PermissionDenied,
+    exceptions.IsADirectory,
+    exceptions.NotADirectory,
+    exceptions.AlreadyExists,
+    exceptions.IsSameFile,
+    exceptions.ConditionNotMatch,
+    exceptions.RateLimited,
+    exceptions.RangeNotSatisfied,
+)
 
 REQUIRED_CAPABILITIES = (
     "list",
@@ -18,15 +31,7 @@ REQUIRED_CAPABILITIES = (
 
 
 class UnsupportedStorageError(RuntimeError):
-    """Raised when a configured backend cannot satisfy the control-plane contract."""
-
-
-@dataclass(frozen=True, slots=True)
-class AppResources:
-    """Typed resources owned by one running FastAPI application."""
-
-    settings: Settings
-    operator: AsyncOperator
+    """Raised when a configured backend cannot satisfy the file-sharing contract."""
 
 
 def create_operator(storage_uri: str) -> AsyncOperator:

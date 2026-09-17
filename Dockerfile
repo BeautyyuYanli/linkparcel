@@ -21,4 +21,4 @@ USER app
 
 EXPOSE 59000
 
-CMD ["fastapi", "run", "src/linkparcel/app.py", "--host", "0.0.0.0", "--port", "59000"]
+CMD ["fastapi", "run", "src/linkparcel/controllers/server.py", "--host", "0.0.0.0", "--port", "59000"]
