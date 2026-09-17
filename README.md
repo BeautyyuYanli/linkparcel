@@ -2,11 +2,12 @@
 
 一个使用私有存储的文件分享工具，提供共享的 `services` 和两个入口：
 
-- `lpc` CLI 在本机调用 services，使用本机存储凭据选择对象 key、签发链接并直传文件，无需启动 LinkParcel server。
+- `lpc` CLI 在本机调用 services，使用本机存储凭据列出文件、签发链接并直传文件，无需启动 LinkParcel server。
 - FastAPI server 调用同一套 services，保留共享 token 鉴权，提供文件列表和上传/下载授权接口，不代理文件内容。
 
-业务逻辑位于 `src/linkparcel/services/`；HTTP 和命令行适配分别位于
-`src/linkparcel/controllers/server.py` 和 `cli.py`。services 不依赖 FastAPI、Typer、应用 token 或 XDG 路径。
+共享的存储、文件列表与签名逻辑位于 `src/linkparcel/services/`；HTTP 入口位于
+`src/linkparcel/controllers/server.py`，CLI 入口及完整上传流程位于 `controllers/cli.py`。
+services 不依赖 FastAPI、Typer、应用 token 或 XDG 路径。
 
 ## 准备环境
 
@@ -20,7 +21,7 @@ CLI 和 server 都需要一个 OpenDAL URI。对应 backend 必须支持 `list`�
 `presign_read`，并由 backend 自己的配置方式提供存储凭据。存储必须保持私有。
 `LPC_STORAGE_URI` 会原样交给 OpenDAL，可能包含敏感配置，不应写入日志或提交版本库。
 
-## CLI 配置与上传
+## CLI 配置与文件操作
 
 将存储 URI 保存到本机配置，再上传文件：
 
@@ -37,24 +38,45 @@ uv run lpc upload ./report.pdf
 `0600`。写入会拒绝符号链接和非普通文件，保留无关配置，并移除旧 CLI 的 `LPC_API_URL` 和
 `LPC_API_TOKEN`。配置里的 URI 不进行 dotenv 变量展开，以保留凭据中的特殊字符。
 
-上传时，进程环境中的 `LPC_STORAGE_URI`、`LPC_UPLOAD_URL_TTL_SECONDS` 和
+运行 `upload`、`list` 或 `download-url` 时，进程环境中的 `LPC_STORAGE_URI`、`LPC_UPLOAD_URL_TTL_SECONDS` 和
 `LPC_DOWNLOAD_URL_TTL_SECONDS` 各自覆盖文件中的对应值，未设置的 TTL 使用默认值。
 也可以只配置环境变量，不创建配置文件。CLI 不使用 `LPC_API_URL` 或 `LPC_API_TOKEN`。
 
-成功时 stdout 只有一行 JSON：
+上传成功时 stdout 只有一行 JSON：
 
 ```json
 {"key":"report-1.pdf","download_url":"https://storage.example/presigned-read/..."}
 ```
 
-上传前检查本地普通文件，再创建和检查本次调用的 OpenDAL operator。共享 services 基于一次
-存储列表选择 `-1`、`-2` 等重名后缀，签发上传请求，然后流式传输文件并生成下载链接。
+CLI controller 在上传前检查本地普通文件，再通过 services 创建和检查本次调用的 OpenDAL operator。
+共享 services 基于一次存储列表选择 `-1`、`-2` 等重名后缀并签发上传请求；
+CLI controller 随后流式传输文件，再调用 services 生成下载链接。
 文件与 HTTP client 在使用后关闭；operator 不跨调用或事件循环复用。
 不协调并发重名上传，也不重试失败的上传或签名请求。
 
 backend 支持相应能力时，上传对象使用 `application/octet-stream`，并用最终 key 设置附件文件名；
 不支持时跳过对应元数据。文件已上传但下载链接签发失败时，命令以非零状态退出，stdout 为空，
 stderr 会包含已经上传的 key。
+
+列出存储根目录下的文件，或为一个已有 key 签发新的下载链接：
+
+```sh
+uv run lpc list
+uv run lpc download-url report-1.pdf
+```
+
+`list` 按 key 升序输出一行 JSON，不包含目录条目；没有文件时返回 `{"files":[]}`：
+
+```json
+{"files":[{"key":"report-1.pdf"},{"key":"report.pdf"}]}
+```
+
+`download-url` 输出与上传相同的 `{"key":"...","download_url":"..."}` 结构，使用
+`LPC_DOWNLOAD_URL_TTL_SECONDS` 设置的有效期（默认 `3600` 秒）。key 必须是单段文件名，
+不会改名或去除首尾空白。命令只签发链接，不下载文件，也不预先检查该对象是否存在。
+
+两个命令都在本次调用内创建并检查存储 operator，直接调用本地 services，无需 server 或应用 token。
+配置、存储或 key 错误会以非零状态退出，stdout 为空，stderr 输出不含存储凭据的错误信息。
 
 ## HTTP server
 

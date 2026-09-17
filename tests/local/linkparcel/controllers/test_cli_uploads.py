@@ -1,4 +1,4 @@
-"""Local upload contracts at real file, OpenDAL, and HTTP transport boundaries."""
+"""CLI upload orchestration at file, OpenDAL, and HTTP transport boundaries."""
 
 import os
 from collections.abc import AsyncIterator
@@ -13,8 +13,8 @@ from opendal import AsyncOperator, exceptions
 from opendal.types import Entry
 
 from linkparcel.config import StorageSettings
-from linkparcel.services import uploads
-from linkparcel.services.uploads import UploadError, upload_file
+from linkparcel.controllers import cli
+from linkparcel.controllers.cli import UploadError, upload_file
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def operator(monkeypatch: pytest.MonkeyPatch) -> Mock:
     fake.presign_read = AsyncMock(
         return_value=SimpleNamespace(method="GET", url="https://storage.test/download", headers={})
     )
-    monkeypatch.setattr(uploads, "create_operator", Mock(return_value=cast(AsyncOperator, fake)))
+    monkeypatch.setattr(cli, "create_operator", Mock(return_value=cast(AsyncOperator, fake)))
     return fake
 
 
@@ -74,7 +74,7 @@ async def test_upload_sends_signed_request_and_returns_final_key(
             return httpx2.Response(200)
 
     client = httpx2.Client(transport=StreamingTransport())
-    monkeypatch.setattr(uploads.httpx2, "Client", lambda: client)
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
     settings = StorageSettings(
         storage_uri="opaque-uri", upload_url_ttl_seconds=123, download_url_ttl_seconds=456
     )
@@ -102,7 +102,7 @@ async def test_invalid_local_path_fails_before_storage_io(
     elif kind == "fifo":
         os.mkfifo(path)
     factory = Mock()
-    monkeypatch.setattr(uploads, "create_operator", factory)
+    monkeypatch.setattr(cli, "create_operator", factory)
 
     with pytest.raises(UploadError, match="Not a readable regular file"):
         await upload_file(StorageSettings(storage_uri="opaque-uri"), path)
@@ -132,11 +132,11 @@ async def test_backend_errors_are_safe_and_identify_partial_success(
     path.write_bytes(b"data")
     secret = "storage-uri-with-secret"
     if operation == "construct":
-        monkeypatch.setattr(uploads, "create_operator", Mock(side_effect=ValueError(secret)))
+        monkeypatch.setattr(cli, "create_operator", Mock(side_effect=ValueError(secret)))
     else:
         getattr(operator, operation).side_effect = exceptions.PermissionDenied(secret)
     client = httpx2.Client(transport=httpx2.MockTransport(lambda _: httpx2.Response(200)))
-    monkeypatch.setattr(uploads.httpx2, "Client", lambda: client)
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
     with pytest.raises(UploadError) as raised:
         await upload_file(StorageSettings(storage_uri=secret), path)
@@ -164,7 +164,7 @@ async def test_failed_transfer_never_issues_download_grant(
         return httpx2.Response(403)
 
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
-    monkeypatch.setattr(uploads.httpx2, "Client", lambda: client)
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
     with pytest.raises(UploadError) as raised:
         await upload_file(StorageSettings(storage_uri="opaque-uri"), path)
@@ -194,7 +194,7 @@ async def test_native_presign_argument_overflow_is_safe_and_preserves_uploaded_k
     else:
         operator.presign_read.side_effect = native_operator.presign_read
     client = httpx2.Client(transport=httpx2.MockTransport(lambda _: httpx2.Response(200)))
-    monkeypatch.setattr(uploads.httpx2, "Client", lambda: client)
+    monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
     with pytest.raises(UploadError) as raised:
         await upload_file(settings, path)
