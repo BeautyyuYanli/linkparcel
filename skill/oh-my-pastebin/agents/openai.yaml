@@ -1,4 +1,0 @@
-interface:
-  display_name: "Oh My Pastebin"
-  short_description: "Upload local files with the omp CLI"
-  default_prompt: "Use $oh-my-pastebin to upload a local file and return its temporary download link."

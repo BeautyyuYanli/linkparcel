@@ -7,14 +7,14 @@ import pytest
 from opendal import AsyncOperator
 from opendal.types import Entry, PresignedRequest
 
-from oh_my_pastebin.files import (
+from linkparcel.files import (
     choose_key,
     issue_download_grant,
     issue_upload_grant,
     list_files,
     validate_key,
 )
-from oh_my_pastebin.models import DownloadRequest, UploadRequest
+from linkparcel.models import DownloadRequest, UploadRequest
 
 
 class _Metadata:

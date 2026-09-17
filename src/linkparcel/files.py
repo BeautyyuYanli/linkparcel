@@ -1,6 +1,6 @@
 """File naming and OpenDAL operations for the API control plane.
 
-The operator root is the entire pastebin namespace. Upload naming deliberately uses
+The operator root is the entire file-sharing service namespace. Upload naming deliberately uses
 one list snapshot and makes no reservation or concurrency guarantee; the backend owns
 the outcome of races between grant creation and direct upload.
 """
@@ -13,11 +13,11 @@ from urllib.parse import quote
 
 from opendal import AsyncOperator
 
-from oh_my_pastebin.models import (
+from linkparcel.models import (
     DownloadGrant,
     DownloadRequest,
     FileList,
-    PasteFile,
+    ParcelFile,
     UploadGrant,
     UploadRequest,
 )
@@ -92,7 +92,7 @@ async def list_files(operator: AsyncOperator) -> FileList:
     public ``opendal.exceptions`` errors.
     """
     keys = await _list_file_keys(operator)
-    return FileList(files=[PasteFile(key=key) for key in sorted(keys)])
+    return FileList(files=[ParcelFile(key=key) for key in sorted(keys)])
 
 
 async def issue_upload_grant(

@@ -373,6 +373,47 @@ wheels = [
 ]
 
 [[package]]
+name = "linkparcel"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi", extra = ["standard"] },
+    { name = "httpx2" },
+    { name = "opendal" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "typer" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
+    { name = "httpx2", specifier = ">=2.9.1" },
+    { name = "opendal", specifier = ">=0.47.5" },
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "typer", specifier = ">=0.27.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.411" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "ruff", specifier = ">=0.16.2" },
+]
+
+[[package]]
 name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -463,47 +504,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/bf/d1bda4f6168e0b2e9e5958945e01910052158313224ada5ce1fb2e1113b8/nodeenv-1.10.0.tar.gz", hash = "sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb", size = 55611, upload-time = "2025-12-20T14:08:54.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl", hash = "sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827", size = 23438, upload-time = "2025-12-20T14:08:52.782Z" },
-]
-
-[[package]]
-name = "oh-my-pastebin"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi", extra = ["standard"] },
-    { name = "httpx2" },
-    { name = "opendal" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "typer" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
-    { name = "httpx2", specifier = ">=2.9.1" },
-    { name = "opendal", specifier = ">=0.47.5" },
-    { name = "pydantic", specifier = ">=2.13.4" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "python-dotenv", specifier = ">=1.2.2" },
-    { name = "typer", specifier = ">=0.27.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyright", specifier = ">=1.1.411" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "ruff", specifier = ">=0.16.2" },
 ]
 
 [[package]]

@@ -17,4 +17,4 @@ test:
 	uv run pytest -q
 
 serve:
-	uv run fastapi dev src/oh_my_pastebin/app.py --port 59000
+	uv run fastapi dev src/linkparcel/app.py --port 59000

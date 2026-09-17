@@ -6,7 +6,7 @@ from typing import Annotated, cast
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from oh_my_pastebin.storage import AppResources
+from linkparcel.storage import AppResources
 
 bearer_scheme = HTTPBearer(auto_error=False)
 BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]

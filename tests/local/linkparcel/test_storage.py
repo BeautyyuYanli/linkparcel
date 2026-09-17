@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 from opendal import AsyncOperator
 
-from oh_my_pastebin.storage import ensure_operator_ready
+from linkparcel.storage import ensure_operator_ready
 
 
 class _Capabilities:

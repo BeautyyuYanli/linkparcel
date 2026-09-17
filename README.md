@@ -1,6 +1,6 @@
-# Oh My Pastebin
+# LinkParcel
 
-一个单租户、私有存储的 pastebin。FastAPI 只负责共享 token 鉴权、选择最终对象 key，
+一个单租户、使用私有存储的文件分享服务。FastAPI 只负责共享 token 鉴权、选择最终对象 key，
 以及签发短期上传/下载请求；文件内容由 CLI 与存储后端直接传输。
 
 ## 准备环境
@@ -22,14 +22,14 @@ cp .env.example .env
 set -a
 . ./.env
 set +a
-uv run fastapi dev src/oh_my_pastebin/app.py
+uv run fastapi dev src/linkparcel/app.py
 ```
 
-`OMP_STORAGE_URI` 会原样交给 OpenDAL，可能包含敏感配置，不应写入日志或提交版本库。
+`LPC_STORAGE_URI` 会原样交给 OpenDAL，可能包含敏感配置，不应写入日志或提交版本库。
 
 ## 安全语义
 
-`OMP_API_TOKEN` 是部署级共享权限，不代表用户身份；任何持有者都拥有该 pastebin 的全部
+`LPC_API_TOKEN` 是部署级共享权限，不代表用户身份；任何持有者都拥有该服务的全部
 业务权限。预签名 URL 是 bearer capability，持有 URL 即可在有效期内访问对应对象，不能
 写入日志或随意转发。撤销业务 token 不会撤销已经签发的 URL，而且 URL 在 backend 规定的
 过期时间前可能被重复使用，不能视为一次性链接。
@@ -39,12 +39,12 @@ uv run fastapi dev src/oh_my_pastebin/app.py
 CLI 只需要控制面地址和业务 token，不需要存储凭据：
 
 ```sh
-uv run omp auth --url http://127.0.0.1:59000 --token replace-with-a-secret
-uv run omp upload ./report.pdf
+uv run lpc auth --url http://127.0.0.1:59000 --token replace-with-a-secret
+uv run lpc upload ./report.pdf
 ```
 
-`auth` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/omp/env`，目录权限为 `0700`，
-文件权限为 `0600`。进程环境中的 `OMP_API_URL` 和 `OMP_API_TOKEN` 会各自独立覆盖该文件中的
+`auth` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/lpc/env`，目录权限为 `0700`，
+文件权限为 `0600`。进程环境中的 `LPC_API_URL` 和 `LPC_API_TOKEN` 会各自独立覆盖该文件中的
 对应值；未在进程环境设置的字段仍从文件读取。
 
 成功时 stdout 只有一行 JSON：
@@ -62,7 +62,7 @@ uv run omp upload ./report.pdf
 ### MinIO
 
 内置的 Compose 配置会构建 API、启动私有 MinIO，并在 API 启动前创建 bucket。
-先创建配置并至少替换 `OMP_API_TOKEN`：
+先创建配置并至少替换 `LPC_API_TOKEN`：
 
 ```sh
 cp -n .env.example .env
@@ -77,7 +77,7 @@ docker compose ps
 set -a
 . ./.env
 set +a
-uv run omp upload ./report.pdf
+uv run lpc upload ./report.pdf
 ```
 
 预签名 URL 使用 `minio.localhost:59001`：该名称在 Compose 网络中指向 MinIO，在
@@ -100,7 +100,7 @@ docker compose --env-file .dev.r2.env -f compose.r2.yaml ps
 宿主机 CLI 可加载同一配置文件：
 
 ```sh
-uv run --env-file .dev.r2.env omp upload ./report.pdf
+uv run --env-file .dev.r2.env lpc upload ./report.pdf
 ```
 
 停止 R2 版本：
@@ -108,6 +108,22 @@ uv run --env-file .dev.r2.env omp upload ./report.pdf
 ```sh
 docker compose --env-file .dev.r2.env -f compose.r2.yaml down
 ```
+
+## 从旧名称迁移
+
+项目原名 Oh My Pastebin。升级后，命令由 `omp` 改为 `lpc`，Python 包由
+`oh_my_pastebin` 改为 `linkparcel`，配置变量前缀由 `OMP_` 改为 `LPC_`。
+旧命令和旧变量不再受支持；请同步修改部署环境与脚本中的引用。
+
+CLI 配置目录改为 `${XDG_CONFIG_HOME:-$HOME/.config}/lpc`，可重新运行 `lpc auth`
+写入配置。Skill 目录与调用名改为 `linkparcel` / `$linkparcel`。
+
+已有部署应保留原存储 URI、MinIO 凭据和 bucket 名，只修改变量名称。
+使用旧版默认值的 MinIO 部署需显式设置 `MINIO_BUCKET=omp`、`MINIO_ROOT_USER=ompdev`
+和原来的 `MINIO_ROOT_PASSWORD`，避免切换到新 bucket。
+若重命名本地目录，请通过 `docker compose -p <原项目名>` 保持已有容器和数据卷的归属；
+R2 的默认 Compose 项目名已改为 `linkparcel-r2`，已有部署可用
+`-p oh-my-pastebin-r2` 继续管理原项目。
 
 ## 开发检查
 

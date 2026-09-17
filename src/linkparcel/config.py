@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Settings loaded once during the FastAPI application lifespan."""
 
-    model_config = SettingsConfigDict(env_prefix="OMP_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="LPC_", extra="ignore")
 
     storage_uri: str
     api_token: SecretStr
@@ -23,5 +23,5 @@ class Settings(BaseSettings):
     def reject_empty_api_token(cls, api_token: SecretStr) -> SecretStr:
         """Reject only the empty token; policy such as length or entropy stays operational."""
         if api_token.get_secret_value() == "":
-            raise ValueError("OMP_API_TOKEN must not be empty")
+            raise ValueError("LPC_API_TOKEN must not be empty")
         return api_token

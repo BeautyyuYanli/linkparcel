@@ -8,7 +8,7 @@ import pytest
 from dotenv import dotenv_values
 from typer.testing import CliRunner
 
-from oh_my_pastebin import cli
+from linkparcel import cli
 
 runner = CliRunner()
 
@@ -17,16 +17,16 @@ runner = CliRunner()
 def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path = tmp_path / "config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(path))
-    monkeypatch.delenv("OMP_API_URL", raising=False)
-    monkeypatch.delenv("OMP_API_TOKEN", raising=False)
+    monkeypatch.delenv("LPC_API_URL", raising=False)
+    monkeypatch.delenv("LPC_API_TOKEN", raising=False)
     return path
 
 
 def _write_cli_config(config_home: Path, *, url: str, token: str) -> None:
-    config_dir = config_home / "omp"
+    config_dir = config_home / "lpc"
     config_dir.mkdir(parents=True)
     (config_dir / "env").write_text(
-        f"OMP_API_URL={url}\nOMP_API_TOKEN={token}\n",
+        f"LPC_API_URL={url}\nLPC_API_TOKEN={token}\n",
         encoding="utf-8",
     )
 
@@ -45,24 +45,24 @@ def test_auth_writes_private_xdg_config(config_home: Path) -> None:
         ["auth", "--url", "https://api.test", "--token", "secret value"],
     )
 
-    config_path = config_home / "omp" / "env"
+    config_path = config_home / "lpc" / "env"
     assert result.exit_code == 0, result.stderr
     assert result.stdout == f"Authentication config saved to {config_path}\n"
     stored_config = dotenv_values(config_path)
-    stored_url = stored_config["OMP_API_URL"]
+    stored_url = stored_config["LPC_API_URL"]
     assert stored_url is not None
     assert stored_url.removesuffix("/") == "https://api.test"
-    assert stored_config["OMP_API_TOKEN"] == "secret value"
+    assert stored_config["LPC_API_TOKEN"] == "secret value"
     assert config_path.parent.stat().st_mode & 0o777 == 0o700
     assert config_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_auth_tightens_existing_config_permissions(config_home: Path) -> None:
-    config_dir = config_home / "omp"
+    config_dir = config_home / "lpc"
     config_dir.mkdir(parents=True)
     config_dir.chmod(0o777)
     config_path = config_dir / "env"
-    config_path.write_text("OMP_API_TOKEN=old\n", encoding="utf-8")
+    config_path.write_text("LPC_API_TOKEN=old\n", encoding="utf-8")
     config_path.chmod(0o666)
 
     result = runner.invoke(
@@ -85,10 +85,10 @@ def test_auth_defaults_to_home_config(tmp_path: Path, monkeypatch: pytest.Monkey
         ["auth", "--url", "https://api.test", "--token", "secret"],
     )
 
-    config_path = home / ".config" / "omp" / "env"
+    config_path = home / ".config" / "lpc" / "env"
     assert result.exit_code == 0, result.stderr
     assert result.stdout == f"Authentication config saved to {config_path}\n"
-    assert dotenv_values(config_path)["OMP_API_TOKEN"] == "secret"
+    assert dotenv_values(config_path)["LPC_API_TOKEN"] == "secret"
 
 
 @pytest.mark.parametrize(
@@ -107,7 +107,7 @@ def test_auth_rejects_invalid_values(
 
     assert result.exit_code != 0
     assert "Authentication configuration is missing or invalid" in result.stderr
-    assert not (config_home / "omp" / "env").exists()
+    assert not (config_home / "lpc" / "env").exists()
 
 
 def test_upload_keeps_business_authorization_off_storage_request(
@@ -183,7 +183,7 @@ def test_upload_process_environment_overrides_file_config(
     result = runner.invoke(
         cli.app,
         ["upload", str(path)],
-        env={"OMP_API_TOKEN": "secret"},
+        env={"LPC_API_TOKEN": "secret"},
     )
 
     assert result.exit_code != 0
@@ -238,7 +238,7 @@ def test_upload_reports_successful_object_when_download_grant_fails(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -255,7 +255,7 @@ def test_upload_maps_invalid_control_plane_url_to_cli_error(tmp_path: Path) -> N
     result = runner.invoke(
         cli.app,
         ["upload", str(path)],
-        env={"OMP_API_TOKEN": "secret", "OMP_API_URL": "http://api.test:invalid"},
+        env={"LPC_API_TOKEN": "secret", "LPC_API_URL": "http://api.test:invalid"},
     )
 
     assert result.exit_code != 0
@@ -284,7 +284,7 @@ def test_upload_maps_invalid_presigned_url_to_storage_error(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -303,7 +303,7 @@ def test_upload_maps_control_plane_transport_failure_to_safe_error(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -333,7 +333,7 @@ def test_upload_maps_storage_transport_failure_to_safe_error(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -349,9 +349,9 @@ def test_upload_requires_nonempty_api_token_before_network(
     path = tmp_path / "report.pdf"
     path.write_bytes(b"%PDF-1.7\nexample")
     if token is None:
-        monkeypatch.delenv("OMP_API_TOKEN", raising=False)
+        monkeypatch.delenv("LPC_API_TOKEN", raising=False)
     else:
-        monkeypatch.setenv("OMP_API_TOKEN", token)
+        monkeypatch.setenv("LPC_API_TOKEN", token)
     _reject_http_requests(monkeypatch)
 
     result = runner.invoke(cli.app, ["upload", str(path)])
@@ -372,7 +372,7 @@ def test_upload_rejects_non_file_path_before_network(
         path.mkdir()
     _reject_http_requests(monkeypatch)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -404,7 +404,7 @@ def test_upload_reports_storage_non_success_without_requesting_download(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -425,7 +425,7 @@ def test_upload_rejects_malformed_successful_control_plane_response(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""
@@ -463,7 +463,7 @@ def test_upload_rejects_download_grant_for_different_key(
     client = httpx2.Client(transport=httpx2.MockTransport(handle))
     monkeypatch.setattr(cli.httpx2, "Client", lambda: client)
 
-    result = runner.invoke(cli.app, ["upload", str(path)], env={"OMP_API_TOKEN": "secret"})
+    result = runner.invoke(cli.app, ["upload", str(path)], env={"LPC_API_TOKEN": "secret"})
 
     assert result.exit_code != 0
     assert result.stdout == ""

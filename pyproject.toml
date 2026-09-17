@@ -1,7 +1,7 @@
 [project]
-name = "oh-my-pastebin"
+name = "linkparcel"
 version = "0.1.0"
-description = "Private authenticated direct-upload pastebin"
+description = "Private authenticated direct-upload file-sharing service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-omp = "oh_my_pastebin.cli:app"
+lpc = "linkparcel.cli:app"
 
 [build-system]
 requires = ["uv_build>=0.11.13,<0.12.0"]

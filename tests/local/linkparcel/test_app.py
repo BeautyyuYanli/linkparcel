@@ -9,8 +9,8 @@ from opendal import AsyncOperator, exceptions
 from opendal.types import Entry, PresignedRequest
 from pydantic import SecretStr
 
-from oh_my_pastebin.app import create_app
-from oh_my_pastebin.config import Settings
+from linkparcel.app import create_app
+from linkparcel.config import Settings
 
 
 class _Capabilities:

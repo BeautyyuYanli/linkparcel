@@ -15,17 +15,17 @@ from typing import Never, cast
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, status
 from opendal import AsyncOperator, exceptions
 
-from oh_my_pastebin.auth import require_api_token
-from oh_my_pastebin.config import Settings
-from oh_my_pastebin.files import issue_download_grant, issue_upload_grant, list_files
-from oh_my_pastebin.models import (
+from linkparcel.auth import require_api_token
+from linkparcel.config import Settings
+from linkparcel.files import issue_download_grant, issue_upload_grant, list_files
+from linkparcel.models import (
     DownloadGrant,
     DownloadRequest,
     FileList,
     UploadGrant,
     UploadRequest,
 )
-from oh_my_pastebin.storage import (
+from linkparcel.storage import (
     AppResources,
     UnsupportedStorageError,
     create_operator,
@@ -158,7 +158,7 @@ def create_app(
         finally:
             del application.state.resources
 
-    application = FastAPI(title="Oh My Pastebin", lifespan=lifespan)
+    application = FastAPI(title="LinkParcel", lifespan=lifespan)
     application.include_router(router)
     return application
 

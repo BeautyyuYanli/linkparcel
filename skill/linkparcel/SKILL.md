@@ -1,14 +1,14 @@
 ---
-name: oh-my-pastebin
-description: Upload local files with the `omp` CLI and return their keys and temporary download links. Use when the user asks to upload a file with Oh My Pastebin or `omp`.
+name: linkparcel
+description: Upload local files with the `lpc` CLI and return their keys and temporary download links. Use when the user asks to upload a file with LinkParcel or `lpc`.
 ---
 
-# Oh My Pastebin
+# LinkParcel
 
 Upload the exact regular file requested by the user:
 
 ```sh
-omp upload -- "/absolute/path/to/file"
+lpc upload -- "/absolute/path/to/file"
 ```
 
 Return the `key` and temporary `download_url` emitted by the command. For multiple files, run the

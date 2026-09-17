@@ -7,7 +7,7 @@ and the HTTP client validates them only when making a request.
 from pydantic import BaseModel
 
 
-class PasteFile(BaseModel):
+class ParcelFile(BaseModel):
     """A file key listed from the operator root."""
 
     key: str
@@ -16,7 +16,7 @@ class PasteFile(BaseModel):
 class FileList(BaseModel):
     """The complete, sorted file collection returned by the first API version."""
 
-    files: list[PasteFile]
+    files: list[ParcelFile]
 
 
 class UploadRequest(BaseModel):

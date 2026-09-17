@@ -3,7 +3,7 @@
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from oh_my_pastebin.config import Settings
+from linkparcel.config import Settings
 
 
 def test_settings_accept_opaque_storage_uri_and_whitespace_token() -> None:

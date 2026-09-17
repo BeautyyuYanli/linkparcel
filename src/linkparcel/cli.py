@@ -3,8 +3,8 @@
 Business authorization is attached only to explicit control-plane requests. Storage
 requests use solely the method and signed headers returned by the upload grant.
 
-CLI configuration lives at ``$XDG_CONFIG_HOME/omp/env`` (defaulting to
-``~/.config/omp/env``). Process environment values override the file.
+CLI configuration lives at ``$XDG_CONFIG_HOME/lpc/env`` (defaulting to
+``~/.config/lpc/env``). Process environment values override the file.
 """
 
 import logging
@@ -19,7 +19,7 @@ from dotenv import set_key
 from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from oh_my_pastebin.models import (
+from linkparcel.models import (
     DownloadGrant,
     DownloadRequest,
     UploadGrant,
@@ -46,7 +46,7 @@ class AuthConfig(BaseModel):
 class CliSettings(BaseSettings):
     """CLI settings loaded from process environment and the XDG env file."""
 
-    model_config = SettingsConfigDict(env_prefix="OMP_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="LPC_", extra="ignore")
 
     api_url: AnyHttpUrl = AnyHttpUrl(DEFAULT_API_URL)
     api_token: AuthToken
@@ -58,14 +58,14 @@ class CliSettings(BaseSettings):
 
 @app.callback()
 def main() -> None:
-    """Upload files to a private Oh My Pastebin deployment."""
+    """Upload files to a private LinkParcel deployment."""
 
 
 def _config_path() -> Path:
     """Return the per-user CLI configuration path."""
     config_home = os.getenv("XDG_CONFIG_HOME")
     base = Path(config_home) if config_home else Path.home() / ".config"
-    return base / "omp" / "env"
+    return base / "lpc" / "env"
 
 
 def _load_cli_settings() -> CliSettings:
@@ -106,9 +106,9 @@ def _write_auth_config(url: str, token: str) -> Path:
             raise CliError("CLI config path is not a regular file")
         if path.exists():
             path.chmod(0o600)
-        set_key(path, "OMP_API_URL", str(config.api_url))
+        set_key(path, "LPC_API_URL", str(config.api_url))
         path.chmod(0o600)
-        set_key(path, "OMP_API_TOKEN", config.api_token.get_secret_value())
+        set_key(path, "LPC_API_TOKEN", config.api_token.get_secret_value())
         path.chmod(0o600)
     except OSError as error:
         logger.debug("CLI config write failed: %s", type(error).__name__)

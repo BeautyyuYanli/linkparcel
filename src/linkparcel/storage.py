@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from opendal import AsyncOperator
 
-from oh_my_pastebin.config import Settings
+from linkparcel.config import Settings
 
 REQUIRED_CAPABILITIES = (
     "list",
