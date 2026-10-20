@@ -1,5 +1,36 @@
 # LinkParcel
 
+Private file sharing with a CLI and an optional HTTP API.
+
+## Install the skill
+
+With Python 3.12+ and [uv](https://docs.astral.sh/uv/) installed, clone the repository,
+install the CLI, and copy the bundled skill into Codex's user skill directory:
+
+```sh
+git clone https://github.com/BeautyyuYanli/linkparcel.git
+cd linkparcel
+uv tool install .
+mkdir -p "$HOME/.agents/skills"
+cp -R skill/linkparcel "$HOME/.agents/skills/"
+```
+
+Codex discovers skills in `~/.agents/skills`, as described in the
+[official OpenAI documentation](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills).
+For other agents, copy `skill/linkparcel/` into their supported skill directory.
+
+Configure your private storage before using the skill:
+
+```sh
+lpc config --storage-uri '<OpenDAL URI>'
+```
+
+Make sure `lpc` is on your agent's `PATH`, then ask it to use the `linkparcel` skill
+to upload files, list stored keys, or create download links. In Codex, invoke it with
+`$linkparcel`. If the skill does not appear, restart Codex.
+
+## How it works
+
 Share files through private object storage using either of two entry points:
 
 - The `lpc` CLI uses local storage credentials to upload files, list stored keys, and
