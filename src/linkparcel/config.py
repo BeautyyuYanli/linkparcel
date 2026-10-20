@@ -51,7 +51,7 @@ def load_cli_settings() -> StorageSettings:
     """Load storage settings with each process value overriding the XDG file.
 
     Dotenv interpolation is disabled so credentials containing ``${...}`` remain
-    opaque. Missing optional fields use model defaults; old API credentials are ignored.
+    opaque. Missing optional fields use model defaults.
     Raises ConfigurationError on unreadable or invalid configuration, with setup guidance.
     """
     try:
@@ -77,7 +77,7 @@ def write_cli_config(
     """Validate explicit arguments and save all storage settings without backend I/O.
 
     The directory and file have modes 0700 and 0600. Symlink or non-regular file
-    targets are rejected. Obsolete API settings are removed, unrelated keys retained.
+    targets are rejected. Only storage settings are updated; unrelated keys are retained.
     Values use python-dotenv's replacement and quoting, with literal backslashes
     escaped and the opaque URI kept last to avoid its trailing-escape parser ambiguity.
     Raises ConfigurationError on invalid input or an unsafe/unwritable target.
@@ -102,10 +102,9 @@ def write_cli_config(
         stored = dotenv_values(path, interpolate=False)
         # python-dotenv escapes quotes but not backslashes. Its quoted-value parser
         # also treats a trailing backslash as escaping the closing quote when another
-        # quoted setting follows, so remove any old URI and append it after other keys.
-        for removed in ("LPC_API_URL", "LPC_API_TOKEN", "LPC_STORAGE_URI"):
-            if removed in stored:
-                unset_key(path, removed)
+        # quoted setting follows, so move the existing URI after the other keys.
+        if "LPC_STORAGE_URI" in stored:
+            unset_key(path, "LPC_STORAGE_URI")
         values = {
             "LPC_UPLOAD_URL_TTL_SECONDS": str(settings.upload_url_ttl_seconds),
             "LPC_DOWNLOAD_URL_TTL_SECONDS": str(settings.download_url_ttl_seconds),

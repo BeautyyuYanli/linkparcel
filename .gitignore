@@ -1,7 +1,9 @@
+# Environment files can contain credentials; only example templates belong in Git.
 .env
 .env.*
+*.env
 !.env.example
-.dev.r2.env
+!.env.*.example
 
 .context/
 .venv/

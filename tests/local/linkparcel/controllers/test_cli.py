@@ -30,7 +30,6 @@ def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "LPC_UPLOAD_URL_TTL_SECONDS",
         "LPC_DOWNLOAD_URL_TTL_SECONDS",
         "LPC_API_TOKEN",
-        "LPC_API_URL",
     ):
         monkeypatch.delenv(variable, raising=False)
     return path
@@ -47,7 +46,7 @@ def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_config_writes_private_xdg_settings(config_home: Path, uri: str) -> None:
     path = config_home / "lpc" / "env"
     path.parent.mkdir(parents=True)
-    path.write_text("LPC_STORAGE_URI='old'\nOTHER='retained'\n")
+    path.write_text("LPC_STORAGE_URI='initial-uri'\nOTHER='retained'\n")
 
     result = runner.invoke(cli.app, ["config", "--storage-uri", uri])
 
@@ -64,13 +63,13 @@ def test_config_writes_private_xdg_settings(config_home: Path, uri: str) -> None
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_config_replaces_legacy_keys_preserves_unrelated_values_and_ignores_environment(
+def test_config_preserves_unrelated_values_and_ignores_environment(
     config_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = config_home / "lpc" / "env"
     path.parent.mkdir(parents=True)
     path.parent.chmod(0o777)
-    path.write_text("LPC_API_URL=https://old.test\nLPC_API_TOKEN=old\nOTHER=retained\n")
+    path.write_text("LPC_API_TOKEN=server-token\nOTHER=retained\n")
     path.chmod(0o666)
     monkeypatch.setenv("LPC_STORAGE_URI", "environment-secret")
     monkeypatch.setenv("LPC_UPLOAD_URL_TTL_SECONDS", "999")
@@ -82,6 +81,7 @@ def test_config_replaces_legacy_keys_preserves_unrelated_values_and_ignores_envi
 
     assert result.exit_code == 0, result.stderr
     assert dotenv_values(path) == {
+        "LPC_API_TOKEN": "server-token",
         "OTHER": "retained",
         "LPC_STORAGE_URI": "opaque-uri",
         "LPC_UPLOAD_URL_TTL_SECONDS": "300",
@@ -178,7 +178,7 @@ def test_upload_reports_partial_success_on_stderr(
 def test_storage_commands_require_storage_setup(config_home: Path, args: list[str]) -> None:
     path = config_home / "lpc" / "env"
     path.parent.mkdir(parents=True)
-    path.write_text("LPC_API_URL=https://old.test\nLPC_API_TOKEN=old\n")
+    path.write_text("LPC_UPLOAD_URL_TTL_SECONDS=300\n")
 
     result = runner.invoke(cli.app, args)
 
@@ -232,7 +232,7 @@ def test_download_url_uses_configured_ttl_and_exact_key_without_fetching_object(
     path.write_text("LPC_STORAGE_URI=opaque-uri\nLPC_DOWNLOAD_URL_TTL_SECONDS=600\n")
     if override_ttl is not None:
         monkeypatch.setenv("LPC_DOWNLOAD_URL_TTL_SECONDS", str(override_ttl))
-    key = " 报告-1.pdf "
+    key = " résumé-1.pdf "
 
     result = runner.invoke(cli.app, ["download-url", key])
 

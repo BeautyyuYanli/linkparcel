@@ -1,87 +1,102 @@
 # LinkParcel
 
-一个使用私有存储的文件分享工具，提供共享的 `services` 和两个入口：
+Share files through private object storage using either of two entry points:
 
-- `lpc` CLI 在本机调用 services，使用本机存储凭据列出文件、签发链接并直传文件，无需启动 LinkParcel server。
-- FastAPI server 调用同一套 services，保留共享 token 鉴权，提供文件列表和上传/下载授权接口，不代理文件内容。
+- The `lpc` CLI uses local storage credentials to upload files, list stored keys, and
+  issue temporary download links. It runs independently of the HTTP server.
+- The optional FastAPI server provides authenticated file listings and upload/download
+  grants. Clients transfer file contents directly to and from storage.
 
-共享的存储、文件列表与签名逻辑位于 `src/linkparcel/services/`；HTTP 入口位于
-`src/linkparcel/controllers/server.py`，CLI 入口及完整上传流程位于 `controllers/cli.py`。
-services 不依赖 FastAPI、Typer、应用 token 或 XDG 路径。
+Shared storage, naming, listing, and signing logic lives in `src/linkparcel/services/`.
+The HTTP controller is `src/linkparcel/controllers/server.py`; the CLI controller and
+upload workflow are in `src/linkparcel/controllers/cli.py`. Services are independent of
+FastAPI, Typer, application tokens, and XDG configuration paths.
 
-## 准备环境
+## Requirements
 
-需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。安装依赖：
+Install Python 3.12+ and [uv](https://docs.astral.sh/uv/), then install dependencies:
 
 ```sh
 uv sync
 ```
 
-CLI 和 server 都需要一个 OpenDAL URI。对应 backend 必须支持 `list`、`presign_write` 和
-`presign_read`，并由 backend 自己的配置方式提供存储凭据。存储必须保持私有。
-`LPC_STORAGE_URI` 会原样交给 OpenDAL，可能包含敏感配置，不应写入日志或提交版本库。
+Both entry points require an OpenDAL URI for a private storage backend that supports
+`list`, `presign_write`, and `presign_read`. Supply credentials through the backend's
+configuration options.
 
-## CLI 配置与文件操作
+`LPC_STORAGE_URI` is passed unchanged to OpenDAL and may contain credentials. Keep it
+out of logs and version control. Git and Docker exclude `.env`, `.env.*`, and `*.env`
+files; only placeholder templates named `.env.example` or `.env.*.example` belong in
+the repository.
 
-将存储 URI 保存到本机配置，再上传文件：
+## CLI configuration and file operations
+
+Save your storage URI locally, then upload a file:
 
 ```sh
 uv run lpc config --storage-uri 's3://bucket?endpoint=https%3A%2F%2Fstorage.example&region=us-east-1&access_key_id=replace-me&secret_access_key=replace-me'
 uv run lpc upload ./report.pdf
 ```
 
-`config` 不连接存储，每次写入完整的三个设置，成功时只输出配置文件路径。
-可通过 `--upload-url-ttl-seconds` 和 `--download-url-ttl-seconds` 设置正整数秒数，
-未指定时分别写入 `300` 和 `3600`。
+`config` saves all three storage settings without connecting to storage and prints only
+the configuration file path. Set positive URL lifetimes with `--upload-url-ttl-seconds`
+and `--download-url-ttl-seconds`; their defaults are `300` and `3600` seconds.
 
-配置保存在 `${XDG_CONFIG_HOME:-$HOME/.config}/lpc/env`，目录权限为 `0700`，文件权限为
-`0600`。写入会拒绝符号链接和非普通文件，保留无关配置，并移除旧 CLI 的 `LPC_API_URL` 和
-`LPC_API_TOKEN`。配置里的 URI 不进行 dotenv 变量展开，以保留凭据中的特殊字符。
+Configuration is stored at `${XDG_CONFIG_HOME:-$HOME/.config}/lpc/env`, with directory
+mode `0700` and file mode `0600`. Writes reject symbolic links and non-regular files
+and preserve unrelated settings. Dotenv variable expansion is disabled when loading
+the CLI configuration so special characters in credentials remain unchanged.
 
-运行 `upload`、`list` 或 `download-url` 时，进程环境中的 `LPC_STORAGE_URI`、`LPC_UPLOAD_URL_TTL_SECONDS` 和
-`LPC_DOWNLOAD_URL_TTL_SECONDS` 各自覆盖文件中的对应值，未设置的 TTL 使用默认值。
-也可以只配置环境变量，不创建配置文件。CLI 不使用 `LPC_API_URL` 或 `LPC_API_TOKEN`。
+For `upload`, `list`, and `download-url`, each process environment value overrides its
+corresponding file setting: `LPC_STORAGE_URI`, `LPC_UPLOAD_URL_TTL_SECONDS`, and
+`LPC_DOWNLOAD_URL_TTL_SECONDS`. Missing lifetimes use the defaults. Environment-only
+configuration is also supported.
 
-上传成功时 stdout 只有一行 JSON：
+A successful upload writes one JSON record to stdout:
 
 ```json
 {"key":"report-1.pdf","download_url":"https://storage.example/presigned-read/..."}
 ```
 
-CLI controller 在上传前检查本地普通文件，再通过 services 创建和检查本次调用的 OpenDAL operator。
-共享 services 基于一次存储列表选择 `-1`、`-2` 等重名后缀并签发上传请求；
-CLI controller 随后流式传输文件，再调用 services 生成下载链接。
-文件与 HTTP client 在使用后关闭；operator 不跨调用或事件循环复用。
-不协调并发重名上传，也不重试失败的上传或签名请求。
+The CLI checks the local file, creates and checks an OpenDAL operator, chooses an
+available key from one storage listing, obtains a signed upload request, streams the
+file, and issues a download link. Name collisions use suffixes such as `-1` and `-2`.
+File and HTTP client handles close after use; operators belong to individual command
+invocations. Concurrent uploads do not reserve names, and failed uploads or signing
+requests are not retried.
 
-backend 支持相应能力时，上传对象使用 `application/octet-stream`，并用最终 key 设置附件文件名；
-不支持时跳过对应元数据。文件已上传但下载链接签发失败时，命令以非零状态退出，stdout 为空，
-stderr 会包含已经上传的 key。
+When supported by the backend, uploaded objects use `application/octet-stream` and
+an attachment filename based on the final key. Unsupported metadata is omitted.
+If the upload succeeds but download signing fails, the command exits with a nonzero
+status, leaves stdout empty, and reports the stored key on stderr.
 
-列出存储根目录下的文件，或为一个已有 key 签发新的下载链接：
+List files at the storage root, or issue a fresh link for an exact key:
 
 ```sh
 uv run lpc list
 uv run lpc download-url report-1.pdf
 ```
 
-`list` 按 key 升序输出一行 JSON，不包含目录条目；没有文件时返回 `{"files":[]}`：
+`list` returns one JSON record with keys in ascending order and directory entries
+excluded. An empty store returns `{"files":[]}`:
 
 ```json
 {"files":[{"key":"report-1.pdf"},{"key":"report.pdf"}]}
 ```
 
-`download-url` 输出与上传相同的 `{"key":"...","download_url":"..."}` 结构，使用
-`LPC_DOWNLOAD_URL_TTL_SECONDS` 设置的有效期（默认 `3600` 秒）。key 必须是单段文件名，
-不会改名或去除首尾空白。命令只签发链接，不下载文件，也不预先检查该对象是否存在。
+`download-url` returns the same `{"key":"...","download_url":"..."}` shape as an upload
+and uses `LPC_DOWNLOAD_URL_TTL_SECONDS` (default `3600` seconds). Keys must be single
+filenames; they are not renamed or trimmed. The command signs a link without fetching
+the file or checking whether the object exists.
 
-两个命令都在本次调用内创建并检查存储 operator，直接调用本地 services，无需 server 或应用 token。
-配置、存储或 key 错误会以非零状态退出，stdout 为空，stderr 输出不含存储凭据的错误信息。
+Both commands create and check their own operator and call local services directly.
+Configuration, storage, and key errors produce a nonzero exit status, empty stdout,
+and an error message on stderr that excludes storage credentials.
 
 ## HTTP server
 
-需要为其他客户端提供授权接口时，可以单独运行 server。复制 `.env.example`，填写存储配置和
-`LPC_API_TOKEN`，再将变量导入服务端进程环境：
+To provide authorization endpoints for other clients, copy `.env.example`, fill in
+the storage settings and `LPC_API_TOKEN`, and load them into the server's environment:
 
 ```sh
 cp .env.example .env
@@ -91,34 +106,39 @@ set +a
 make serve
 ```
 
-server 只读取进程环境，不读取 CLI 的 XDG 配置。启动时创建并检查一个 operator，在请求间复用。
-以下接口均要求 `Authorization: Bearer <LPC_API_TOKEN>`：
+The server reads process environment variables. At startup it creates and checks one
+operator, then shares it across requests. All endpoints below require
+`Authorization: Bearer <LPC_API_TOKEN>`:
 
-| 接口 | 功能 |
+| Endpoint | Behavior |
 | --- | --- |
-| `GET /api/v1/files` | 列出存储根目录下的文件 |
-| `POST /api/v1/uploads` | 根据 `{"name":"report.pdf"}` 签发上传请求 |
-| `POST /api/v1/downloads` | 根据 `{"key":"report.pdf"}` 签发下载链接 |
+| `GET /api/v1/files` | List files at the storage root |
+| `POST /api/v1/uploads` | Issue an upload request for `{"name":"report.pdf"}` |
+| `POST /api/v1/downloads` | Issue a download URL for `{"key":"report.pdf"}` |
 
-缺失或无效 token 返回 `401`，非法 key 返回 `422`，存储操作失败返回不包含凭据的 `503`。
-签名响应使用 `Cache-Control: no-store`。调用者根据授权中的 method、headers 和 URL 直接访问存储，
-自行提供上传内容及 `Content-Length`。
+Missing or invalid tokens return `401`, invalid keys return `422`, and storage
+failures return a `503` response without credentials. Signed responses use
+`Cache-Control: no-store`. Clients use the granted method, headers, and URL to access
+storage directly, supplying the upload body and `Content-Length` themselves.
 
-## 安全语义
+## Security
 
-CLI 持有存储凭据，权限由存储端配置决定。server 的 `LPC_API_TOKEN` 是部署级共享权限，
-不代表用户身份；任何持有者都拥有该服务的全部业务权限。
+CLI permissions come from its storage credentials. The server's `LPC_API_TOKEN` is a
+shared deployment credential: every holder has access to all service operations.
 
-预签名 URL 是 bearer capability，持有 URL 即可在有效期内访问对应对象，不能写入日志或随意转发。
-撤销应用 token 不会撤销已经签发的 URL，而且 URL 在 backend 规定的过期时间前可能被重复使用，
-不能视为一次性链接。
+Anyone holding a presigned URL can access the corresponding object within its
+lifetime. Keep these URLs out of logs and share them deliberately. Revoking the
+application token does not revoke issued URLs, which may be reusable until the
+backend's expiration time.
 
 ## Docker Compose
 
 ### SeaweedFS mini
 
-内置的 Compose 配置会构建 API、启动私有 SeaweedFS mini，并在 API 启动前创建 bucket。
-先创建配置并至少替换 `LPC_API_TOKEN`：
+The bundled Compose configuration builds the API and starts a private SeaweedFS mini
+instance, creating the bucket before the API starts. Create a configuration file and
+replace `LPC_API_TOKEN`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` with your own
+values before starting the services:
 
 ```sh
 cp -n .env.example .env
@@ -126,8 +146,9 @@ docker compose up --build -d
 docker compose ps
 ```
 
-宿主机发布 API 的 `59000` 和 SeaweedFS S3 API 的 `59001`，绑定所有宿主机接口；
-SeaweedFS 管理端口不发布。CLI 可在宿主机运行，使用与 Compose 相同的存储配置：
+The API is published on port `59000` and the SeaweedFS S3 API on port `59001`, both on
+all host interfaces. SeaweedFS administration ports are not published. Run the CLI
+on the host with the same storage configuration:
 
 ```sh
 set -a
@@ -137,67 +158,59 @@ export LPC_STORAGE_URI="s3://${S3_BUCKET:-lpc}?endpoint=http%3A%2F%2Fseaweedfs.l
 uv run lpc upload ./report.pdf
 ```
 
-这条 CLI 上传链路只依赖 SeaweedFS。预签名 URL 使用 `seaweedfs.localhost:59001`：该名称在
-Compose 网络中指向 SeaweedFS，在当前宿主机上指向 loopback，因此 API 容器和宿主机 CLI
-使用同一个 endpoint。凭据和 bucket 名需保持 URL-safe，因为上述配置将它们嵌入 URI。
-停止服务但保留对象数据：
+CLI uploads require only SeaweedFS. Presigned URLs use `seaweedfs.localhost:59001`:
+this name points to SeaweedFS inside the Compose network and must resolve to
+`127.0.0.1` on the host. Configure your hosts file or local DNS if your system does
+not resolve `*.localhost` automatically. This example is for local development;
+remote downloads require a storage endpoint reachable by both the signer and the
+recipient. Credentials and bucket names must be URL-safe because the configuration
+embeds them in a URI.
+
+Stop the services while retaining stored objects:
 
 ```sh
 docker compose down
 ```
 
-SeaweedFS mini 使用 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `S3_BUCKET`
-配置凭据和自动创建的 bucket，数据保存在独立的 `seaweedfs-data` 卷。
-从旧版 MinIO Compose 升级时，需要将 `.env` 中的 `MINIO_ROOT_USER`、
-`MINIO_ROOT_PASSWORD`、`MINIO_BUCKET` 分别改为上述变量。
-旧 `minio-data` 卷不会自动迁移，也不能直接供 SeaweedFS 使用；如需保留已有文件，
-请先通过 S3 接口复制到 SeaweedFS，验证后再停用旧 MinIO。
+SeaweedFS mini uses `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `S3_BUCKET` to
+configure credentials and create the bucket. Object data is stored in the
+`seaweedfs-data` volume.
 
 ### Cloudflare R2
 
-只使用 CLI 时，将 R2 的 OpenDAL URI 和可选 TTL 放入 `.dev.r2.env`，即可直接上传：
+Create a configuration file from the template and replace the bucket, account ID,
+and storage credential placeholders. Percent-encode URI query values. CLI use
+requires only storage settings:
 
 ```sh
-uv run --env-file .dev.r2.env lpc upload ./report.pdf
+cp -n .env.r2.example .env.r2
+# Edit .env.r2 with your R2 settings before running:
+uv run --env-file .env.r2 lpc upload ./report.pdf
 ```
 
-如果还需要 HTTP 授权接口，在同一文件中配置 `LPC_API_TOKEN` 并启动 server：
+To also run the HTTP authorization API, set `LPC_API_TOKEN` in the same file and start
+the server:
 
 ```sh
-docker compose --env-file .dev.r2.env -f compose.r2.yaml up --build -d
-docker compose --env-file .dev.r2.env -f compose.r2.yaml ps
+docker compose --env-file .env.r2 -f compose.r2.yaml up --build -d
+docker compose --env-file .env.r2 -f compose.r2.yaml ps
 ```
 
-停止 R2 server：
+Stop the R2 server:
 
 ```sh
-docker compose --env-file .dev.r2.env -f compose.r2.yaml down
+docker compose --env-file .env.r2 -f compose.r2.yaml down
 ```
 
-## 从旧 CLI 架构和名称迁移
-
-`lpc auth` 已替换为 `lpc config`，CLI 不再调用 LinkParcel server。
-旧应用 token 无法转换为存储凭据，请运行 `lpc config --storage-uri <OpenDAL URI>`
-重新配置；原 XDG 文件路径不变，旧 API 配置项会在写入时清理。server 的应用 token 仍需保留。
-Python 入口已改为 `linkparcel.controllers.cli:app` 和 `linkparcel.controllers.server:app`，
-引用旧模块路径的启动脚本需同步更新。
-
-项目原名 Oh My Pastebin。命令由 `omp` 改为 `lpc`，Python 包由 `oh_my_pastebin` 改为
-`linkparcel`，配置变量前缀由 `OMP_` 改为 `LPC_`。旧命令和旧变量不再受支持；请同步修改部署环境
-与脚本中的引用。CLI 配置目录为 `${XDG_CONFIG_HOME:-$HOME/.config}/lpc`，Skill 目录与调用名为
-`linkparcel` / `$linkparcel`。
-
-仅迁移项目名称时，已有部署应保留原存储 URI、存储凭据和 bucket 名，只修改变量名称。
-继续使用旧 MinIO Compose 的部署需显式设置 `MINIO_BUCKET=omp`、`MINIO_ROOT_USER=ompdev`
-和原来的 `MINIO_ROOT_PASSWORD`，避免切换到新 bucket。
-若重命名本地目录，请通过 `docker compose -p <原项目名>` 保持已有容器和数据卷的归属；
-R2 的默认 Compose 项目名已改为 `linkparcel-r2`，已有部署可用
-`-p oh-my-pastebin-r2` 继续管理原项目。
-
-## 开发检查
+## Development checks
 
 ```sh
 make check
 ```
 
-该命令依次执行 Ruff、Pyright 和本地 Pytest 契约测试。
+This runs Ruff linting and formatting checks, strict Pyright type checking, and local
+Pytest contract tests.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

@@ -186,22 +186,22 @@ async def test_issue_upload_grant_forwards_presigned_request_components() -> Non
 
 async def test_issue_upload_grant_encodes_unicode_final_key_in_disposition() -> None:
     fake = _Operator(
-        [_Entry("报告.aab")],
+        [_Entry("résumé.pdf")],
         content_type=False,
         content_disposition=True,
     )
 
     await issue_upload_grant(
         cast(AsyncOperator, fake),
-        UploadRequest(name="报告.aab"),
+        UploadRequest(name="résumé.pdf"),
         ttl_seconds=300,
     )
 
     assert fake.write_calls == [
         (
-            "报告-1.aab",
+            "résumé-1.pdf",
             300,
-            {"content_disposition": ("attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A-1.aab")},
+            {"content_disposition": "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9-1.pdf"},
         )
     ]
 

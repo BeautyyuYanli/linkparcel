@@ -51,7 +51,6 @@ def test_cli_settings_override_individual_file_values_and_preserve_opaque_uri(
     monkeypatch.setenv("KEEP_THIS", "must-not-be-interpolated")
     monkeypatch.setenv("LPC_UPLOAD_URL_TTL_SECONDS", "400")
     monkeypatch.setenv("LPC_API_TOKEN", "")
-    monkeypatch.setenv("LPC_API_URL", "not-a-url")
 
     settings = load_cli_settings()
 
